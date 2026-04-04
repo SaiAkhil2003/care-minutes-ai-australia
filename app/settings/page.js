@@ -1,0 +1,593 @@
+'use client';
+
+import { useState } from 'react';
+import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, Globe, X, Plus } from 'lucide-react';
+import { facility, manager } from '@/lib/dummyData';
+import { useLocalStorage } from '@/lib/useLocalStorage';
+
+const STATES = ['NSW','VIC','QLD','SA','WA','TAS','NT','ACT'];
+
+const DEFAULT_EMAIL_RECIPIENTS = [
+  { id: 1, email: 'jennifer@sunriseagedcare.com.au', active: true },
+  { id: 2, email: 'operations@sunriseagedcare.com.au', active: true },
+];
+const DEFAULT_SMS_RECIPIENTS = [
+  { id: 1, mobile: '0412 345 678', active: true },
+];
+
+export default function SettingsPage() {
+  const [saved,   setSaved]   = useState(false);
+  const [saving,  setSaving]  = useState(false);
+
+  // Facility details — persisted to localStorage
+  const [facName,     setFacName]     = useLocalStorage('cm_facName',    facility.name);
+  const [abn,         setAbn]         = useLocalStorage('cm_abn',        facility.abn);
+  const [state,       setState]       = useLocalStorage('cm_state',      facility.state);
+  const [address,     setAddress]     = useLocalStorage('cm_address',    facility.address);
+  const [postcode,    setPostcode]    = useLocalStorage('cm_postcode',   facility.postcode);
+  const [residents,   setResidents]   = useLocalStorage('cm_residents',  String(facility.residentCount));
+
+  // Manager details
+  const [mgName,      setMgName]      = useLocalStorage('cm_mgName',     manager.name);
+  const [mgEmail,     setMgEmail]     = useLocalStorage('cm_mgEmail',    manager.email);
+  const [mgPhone,     setMgPhone]     = useLocalStorage('cm_mgPhone',    manager.phone);
+
+  // Alert preferences
+  const [alertTime,   setAlertTime]   = useLocalStorage('cm_alertTime',  '07:00');
+  const [emailAlerts, setEmailAlerts] = useLocalStorage('cm_emailAlerts', true);
+  const [smsAlerts,   setSmsAlerts]   = useLocalStorage('cm_smsAlerts',  false);
+  const [smsPhone,    setSmsPhone]    = useLocalStorage('cm_smsPhone',   '');
+
+  // AN-ACC
+  const [anAccRate,   setAnAccRate]   = useLocalStorage('cm_anAccRate',  String(facility.anAccRate));
+
+  // ── Alert Recipients ────────────────────────────────────────────────────────
+  const [emailRecipients, setEmailRecipients] = useLocalStorage('cm_emailRecipients', DEFAULT_EMAIL_RECIPIENTS);
+  const [smsRecipients,   setSmsRecipients]   = useLocalStorage('cm_smsRecipients',   DEFAULT_SMS_RECIPIENTS);
+  const [newEmail,        setNewEmail]        = useState('');
+  const [emailError,      setEmailError]      = useState('');
+  const [newMobile,       setNewMobile]       = useState('');
+  const [mobileError,     setMobileError]     = useState('');
+  const [recipientsSaved, setRecipientsSaved] = useState(false);
+  const [recipientsSaving, setRecipientsSaving] = useState(false);
+
+  // ── Language & Regional ─────────────────────────────────────────────────────
+  const [language,    setLanguage]    = useLocalStorage('cm_language',    'en-AU');
+  const [dateFormat,  setDateFormat]  = useLocalStorage('cm_dateFormat',  'DD/MM/YYYY');
+  const [timezone,    setTimezone]    = useLocalStorage('cm_timezone',    'AEST');
+  const [showCents,   setShowCents]   = useLocalStorage('cm_showCents',   true);
+  const [langSaved,   setLangSaved]   = useState(false);
+  const [langSaving,  setLangSaving]  = useState(false);
+
+  function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setTimeout(() => {
+      setSaving(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }, 800);
+  }
+
+  // ── Email recipient handlers ──────────────────────────────────────────────
+  function validateEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  function addEmail() {
+    const trimmed = newEmail.trim();
+    if (!validateEmail(trimmed)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+    if (emailRecipients.length >= 5) {
+      setEmailError('Maximum 5 email recipients allowed.');
+      return;
+    }
+    if (emailRecipients.some(r => r.email.toLowerCase() === trimmed.toLowerCase())) {
+      setEmailError('This email address is already in the list.');
+      return;
+    }
+    setEmailRecipients(prev => [...prev, { id: Date.now(), email: trimmed, active: true }]);
+    setNewEmail('');
+    setEmailError('');
+  }
+
+  function removeEmail(id) {
+    setEmailRecipients(prev => prev.filter(r => r.id !== id));
+  }
+
+  function toggleEmail(id) {
+    setEmailRecipients(prev => prev.map(r => r.id === id ? { ...r, active: !r.active } : r));
+  }
+
+  // ── SMS recipient handlers ────────────────────────────────────────────────
+  function validateMobile(mobile) {
+    return /^04\d{2}\s?\d{3}\s?\d{3}$/.test(mobile.trim());
+  }
+
+  function addMobile() {
+    const trimmed = newMobile.trim();
+    if (!validateMobile(trimmed)) {
+      setMobileError('Enter a valid Australian mobile number (04XX XXX XXX).');
+      return;
+    }
+    if (smsRecipients.length >= 3) {
+      setMobileError('Maximum 3 SMS recipients allowed.');
+      return;
+    }
+    if (smsRecipients.some(r => r.mobile.replace(/\s/g,'') === trimmed.replace(/\s/g,''))) {
+      setMobileError('This mobile number is already in the list.');
+      return;
+    }
+    setSmsRecipients(prev => [...prev, { id: Date.now(), mobile: trimmed, active: true }]);
+    setNewMobile('');
+    setMobileError('');
+  }
+
+  function removeMobile(id) {
+    setSmsRecipients(prev => prev.filter(r => r.id !== id));
+  }
+
+  function toggleMobile(id) {
+    setSmsRecipients(prev => prev.map(r => r.id === id ? { ...r, active: !r.active } : r));
+  }
+
+  function handleRecipientsSave() {
+    setRecipientsSaving(true);
+    setTimeout(() => {
+      setRecipientsSaving(false);
+      setRecipientsSaved(true);
+      setTimeout(() => setRecipientsSaved(false), 3000);
+    }, 800);
+  }
+
+  function handleLangSave() {
+    setLangSaving(true);
+    setTimeout(() => {
+      setLangSaving(false);
+      setLangSaved(true);
+      setTimeout(() => setLangSaved(false), 3000);
+    }, 800);
+  }
+
+  function SectionCard({ icon: Icon, title, children }) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
+        <div className="flex items-center gap-2 mb-5 pb-3 border-b border-gray-100">
+          <Icon className="w-4 h-4 text-[#22c55e]" />
+          <h2 className="font-semibold text-gray-900">{title}</h2>
+        </div>
+        {children}
+      </div>
+    );
+  }
+
+  function Field({ label, hint, children }) {
+    return (
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+        {hint && <p className="text-xs text-gray-400 mb-1.5">{hint}</p>}
+        {children}
+      </div>
+    );
+  }
+
+  function Input({ value, onChange, placeholder, type = 'text', ...rest }) {
+    return (
+      <input
+        type={type}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        {...rest}
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
+      />
+    );
+  }
+
+  function Toggle({ checked, onChange, label }) {
+    return (
+      <label className="flex items-center gap-3 cursor-pointer group">
+        <div className="relative">
+          <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
+          <div className={`w-11 h-6 rounded-full transition-colors ${checked ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
+          <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-5' : ''}`} />
+        </div>
+        {label && <span className="text-sm text-gray-700">{label}</span>}
+      </label>
+    );
+  }
+
+  function SmallToggle({ checked, onChange }) {
+    return (
+      <label className="flex items-center gap-1.5 cursor-pointer">
+        <div className="relative">
+          <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
+          <div className={`w-8 h-4 rounded-full transition-colors ${checked ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
+          <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
+        </div>
+        <span className="text-xs text-gray-500">{checked ? 'Active' : 'Inactive'}</span>
+      </label>
+    );
+  }
+
+  function SaveButton({ saving, saved, onClick, label = 'Save Settings' }) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={saving}
+        className="flex items-center gap-2 px-6 py-2.5 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-60 shadow-sm"
+      >
+        {saving ? (
+          <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</>
+        ) : saved ? (
+          <><Check className="w-4 h-4" /> Saved!</>
+        ) : (
+          <><Save className="w-4 h-4" /> {label}</>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-6 max-w-3xl mx-auto">
+
+      <div className="mb-6">
+        <h1 className="text-xl font-bold text-gray-900">Facility Settings</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Manage your facility configuration and preferences</p>
+      </div>
+
+      <form onSubmit={handleSave}>
+
+        {/* ── Facility Details ── */}
+        <SectionCard icon={Building2} title="Facility Details">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <Field label="Facility Name">
+                <Input value={facName} onChange={e => setFacName(e.target.value)} placeholder="Sunrise Aged Care" />
+              </Field>
+            </div>
+            <Field label="ABN">
+              <Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="12 345 678 901" />
+            </Field>
+            <Field label="State">
+              <select
+                value={state}
+                onChange={e => setState(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
+              >
+                {STATES.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Street Address">
+                <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="42 Sunrise Boulevard" />
+              </Field>
+            </div>
+            <Field label="Postcode (4 digits)">
+              <Input
+                value={postcode}
+                onChange={e => setPostcode(e.target.value.replace(/\D/,'').slice(0,4))}
+                placeholder="2150"
+                maxLength={4}
+              />
+            </Field>
+            <Field label="Number of Residents">
+              <Input
+                type="number"
+                value={residents}
+                onChange={e => setResidents(e.target.value)}
+                placeholder="40"
+                min="1" max="500"
+              />
+            </Field>
+          </div>
+        </SectionCard>
+
+        {/* ── Manager Details ── */}
+        <SectionCard icon={User} title="Manager Details">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <Field label="Manager Name">
+                <Input value={mgName} onChange={e => setMgName(e.target.value)} placeholder="Jennifer Roberts" />
+              </Field>
+            </div>
+            <Field label="Email Address">
+              <Input type="email" value={mgEmail} onChange={e => setMgEmail(e.target.value)} placeholder="jennifer@facility.com.au" />
+            </Field>
+            <Field label="Phone (04XX XXX XXX)">
+              <Input value={mgPhone} onChange={e => setMgPhone(e.target.value)} placeholder="0412 345 678" />
+            </Field>
+          </div>
+        </SectionCard>
+
+        {/* ── Alert Preferences ── */}
+        <SectionCard icon={Bell} title="Alert Preferences">
+          <div className="space-y-4">
+            <Field label="Daily Alert Time (AEST)" hint="AI gap analysis is sent to your email at this time each morning">
+              <input
+                type="time"
+                value={alertTime}
+                onChange={e => setAlertTime(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+              />
+            </Field>
+            <div className="space-y-3">
+              <Toggle
+                checked={emailAlerts}
+                onChange={() => setEmailAlerts(v => !v)}
+                label="Email alerts"
+              />
+              <Toggle
+                checked={smsAlerts}
+                onChange={() => setSmsAlerts(v => !v)}
+                label="SMS alerts (Growth plan only)"
+              />
+            </div>
+            {smsAlerts && (
+              <Field label="SMS Phone Number">
+                <Input
+                  value={smsPhone}
+                  onChange={e => setSmsPhone(e.target.value)}
+                  placeholder="0412 345 678"
+                />
+              </Field>
+            )}
+          </div>
+        </SectionCard>
+
+        {/* ── AN-ACC Settings ── */}
+        <SectionCard icon={DollarSign} title="AN-ACC Settings">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="AN-ACC Rate per Resident (AUD/day)" hint="Default: $220.00. Update if your Base Care Tariff changes.">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                <input
+                  type="number"
+                  value={anAccRate}
+                  onChange={e => setAnAccRate(e.target.value)}
+                  step="0.01"
+                  min="0"
+                  className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+                />
+              </div>
+            </Field>
+            <div className="flex items-end pb-0.5">
+              <div className="bg-blue-50 rounded-lg p-3 w-full">
+                <p className="text-xs text-blue-600 font-medium">Daily subsidy preview</p>
+                <p className="text-lg font-bold text-blue-800 mt-0.5">
+                  ${(parseFloat(anAccRate || 0) * parseInt(residents || 40)).toLocaleString('en-AU', { minimumFractionDigits: 2 })}
+                </p>
+                <p className="text-xs text-blue-500">{residents} residents × ${parseFloat(anAccRate || 0).toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── Save Button ── */}
+        <div className="flex justify-end mb-8">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex items-center gap-2 px-6 py-2.5 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-60 shadow-sm"
+          >
+            {saving ? (
+              <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</>
+            ) : saved ? (
+              <><Check className="w-4 h-4" /> Settings Saved!</>
+            ) : (
+              <><Save className="w-4 h-4" /> Save Settings</>
+            )}
+          </button>
+        </div>
+      </form>
+
+      {/* ── Alert Recipients ───────────────────────────────────────────────── */}
+      <SectionCard icon={Mail} title="Alert Recipients">
+        <p className="text-sm text-gray-500 mb-5">
+          Add email addresses and mobile numbers to receive daily compliance alerts at 07:00 AEST
+        </p>
+
+        {/* Email Recipients */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Mail className="w-3.5 h-3.5 text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-700">Email Recipients</h3>
+            <span className="text-xs text-gray-400">({emailRecipients.length}/5)</span>
+          </div>
+
+          <div className="flex gap-2 mb-2">
+            <input
+              type="email"
+              value={newEmail}
+              onChange={e => { setNewEmail(e.target.value); setEmailError(''); }}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail())}
+              placeholder="Email address"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
+            />
+            <button
+              type="button"
+              onClick={addEmail}
+              disabled={emailRecipients.length >= 5}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors disabled:opacity-40"
+            >
+              <Plus className="w-4 h-4" /> Add
+            </button>
+          </div>
+          {emailError && <p className="text-xs text-red-500 mb-2">{emailError}</p>}
+
+          {emailRecipients.length > 0 && (
+            <div className="space-y-2 mt-3">
+              {emailRecipients.map(r => (
+                <div key={r.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span className="text-sm text-gray-700 truncate">{r.email}</span>
+                  </div>
+                  <div className="flex items-center gap-3 ml-3 shrink-0">
+                    <SmallToggle checked={r.active} onChange={() => toggleEmail(r.id)} />
+                    <button
+                      type="button"
+                      onClick={() => removeEmail(r.id)}
+                      className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                      title="Remove"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* SMS Recipients */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Smartphone className="w-3.5 h-3.5 text-gray-400" />
+            <h3 className="text-sm font-semibold text-gray-700">SMS Recipients</h3>
+            <span className="text-xs text-gray-400">({smsRecipients.length}/3)</span>
+          </div>
+
+          <div className="flex gap-2 mb-2">
+            <input
+              type="tel"
+              value={newMobile}
+              onChange={e => { setNewMobile(e.target.value); setMobileError(''); }}
+              onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMobile())}
+              placeholder="04XX XXX XXX"
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
+            />
+            <button
+              type="button"
+              onClick={addMobile}
+              disabled={smsRecipients.length >= 3}
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors disabled:opacity-40"
+            >
+              <Plus className="w-4 h-4" /> Add
+            </button>
+          </div>
+          {mobileError && <p className="text-xs text-red-500 mb-2">{mobileError}</p>}
+
+          {smsRecipients.length > 0 && (
+            <div className="space-y-2 mt-3">
+              {smsRecipients.map(r => (
+                <div key={r.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <Smartphone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span className="text-sm text-gray-700">{r.mobile}</span>
+                  </div>
+                  <div className="flex items-center gap-3 ml-3 shrink-0">
+                    <SmallToggle checked={r.active} onChange={() => toggleMobile(r.id)} />
+                    <button
+                      type="button"
+                      onClick={() => removeMobile(r.id)}
+                      className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                      title="Remove"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end">
+          <SaveButton saving={recipientsSaving} saved={recipientsSaved} onClick={handleRecipientsSave} label="Save Recipients" />
+        </div>
+      </SectionCard>
+
+      {/* ── Language & Regional Settings ───────────────────────────────────── */}
+      <SectionCard icon={Globe} title="Language & Regional Settings">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+          {/* Language */}
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Language</label>
+            <select
+              value={language}
+              onChange={e => setLanguage(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
+            >
+              <option value="en-AU">🇦🇺 English (Australian)</option>
+              <option value="en-INT">🌐 English (International)</option>
+            </select>
+            <div className="mt-2 bg-gray-50 border border-gray-100 rounded-lg p-3">
+              {language === 'en-AU' ? (
+                <div>
+                  <p className="text-xs font-medium text-gray-600 mb-1">Australian English spelling</p>
+                  <p className="text-xs text-gray-400">colour, centre, organise, ageing, licence, recognise</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Government terms: ACQSC, AN-ACC, QFR, MyAgedCare, Base Care Tariff</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs font-medium text-gray-600 mb-1">International English spelling</p>
+                  <p className="text-xs text-gray-400">color, center, organize, aging, license, recognize</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Government terms: ACQSC, AN-ACC, QFR, MyAgedCare, Base Care Tariff</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Date Format */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date Format</label>
+            <select
+              value={dateFormat}
+              onChange={e => setDateFormat(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
+            >
+              <option value="DD/MM/YYYY">DD/MM/YYYY — Australian default</option>
+              <option value="MM/DD/YYYY">MM/DD/YYYY — US format</option>
+              <option value="YYYY-MM-DD">YYYY-MM-DD — ISO format</option>
+            </select>
+          </div>
+
+          {/* Timezone */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Timezone</label>
+            <select
+              value={timezone}
+              onChange={e => setTimezone(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
+            >
+              <option value="AEST">AEST — Australian Eastern Standard Time</option>
+              <option value="AEDT">AEDT — Australian Eastern Daylight Time</option>
+              <option value="ACST">ACST — Australian Central Standard Time</option>
+              <option value="AWST">AWST — Australian Western Standard Time</option>
+            </select>
+          </div>
+
+          {/* Currency */}
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-2">Currency Display</label>
+            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-700">AUD $</p>
+                <p className="text-xs text-gray-400 mt-0.5">Australian Dollar (default)</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <div className="relative">
+                  <input type="checkbox" className="sr-only" checked={showCents} onChange={() => setShowCents(v => !v)} />
+                  <div className={`w-11 h-6 rounded-full transition-colors ${showCents ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
+                  <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${showCents ? 'translate-x-5' : ''}`} />
+                </div>
+                <span className="text-sm text-gray-600">Show cents</span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+
+        <div className="flex justify-end mt-5">
+          <SaveButton saving={langSaving} saved={langSaved} onClick={handleLangSave} label="Save Language Settings" />
+        </div>
+      </SectionCard>
+
+    </div>
+  );
+}
