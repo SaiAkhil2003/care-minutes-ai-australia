@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { Shield, ExternalLink, RefreshCw, Eye, Bell, Check, Save, Settings2 } from 'lucide-react';
+import { Shield, ExternalLink, RefreshCw, Eye, Bell, Check, Save, Settings2, Database } from 'lucide-react';
 import { allFacilities } from '@/lib/dummyData';
 import { formatPct } from '@/lib/compliance';
 import { useLocalStorage } from '@/lib/useLocalStorage';
+import { seedDatabase } from '@/lib/seedData';
 
 function toDisplay(iso) {
   const [y, m, d] = iso.split('-');
@@ -50,6 +51,8 @@ function Toggle({ checked, onChange }) {
 export default function AdminPage() {
   const [facilities, setFacilities] = useState(allFacilities);
   const [refreshing, setRefreshing] = useState(false);
+  const [seeding, setSeeding]       = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
 
   // Alert config per facility
   const [alertConfig, setAlertConfig] = useLocalStorage('cm_facilityAlertConfig', DEFAULT_ALERT_CONFIG);
@@ -64,6 +67,20 @@ export default function AdminPage() {
   function handleRefresh() {
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 1200);
+  }
+
+  async function handleSeed() {
+    setSeeding(true);
+    setSeedResult(null);
+    try {
+      const result = await seedDatabase();
+      setSeedResult(result.success ? 'success' : 'error');
+    } catch {
+      setSeedResult('error');
+    } finally {
+      setSeeding(false);
+      setTimeout(() => setSeedResult(null), 5000);
+    }
   }
 
   const green = facilities.filter(f => f.complianceStatus === 'GREEN').length;
@@ -114,31 +131,49 @@ export default function AdminPage() {
             <p className="text-sm text-gray-500 mt-0.5">All facilities — compliance snapshot</p>
           </div>
         </div>
-        <button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors font-medium"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleSeed}
+            disabled={seeding}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60
+              ${seedResult === 'success' ? 'bg-green-100 text-green-700 border border-green-200'
+              : seedResult === 'error'   ? 'bg-red-100 text-red-700 border border-red-200'
+              : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'}`}
+          >
+            {seeding
+              ? <><span className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /> Seeding…</>
+              : seedResult === 'success'
+                ? <><Check className="w-4 h-4" /> Seeded!</>
+                : seedResult === 'error'
+                  ? 'Seed Failed'
+                  : <><Database className="w-4 h-4" /> Seed Database</>}
+          </button>
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors font-medium"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6">
+        <div className="stat-gradient-green border border-green-200 rounded-xl p-3 md:p-4 text-center card-hover">
           <p className="text-xs font-medium text-green-600 uppercase tracking-wide">Compliant</p>
-          <p className="text-3xl font-bold text-green-700 mt-1">{green}</p>
+          <p className="text-2xl md:text-3xl font-bold text-green-700 mt-1">{green}</p>
           <p className="text-xs text-green-500 mt-0.5">facilities</p>
         </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-center">
+        <div className="stat-gradient-amber border border-amber-200 rounded-xl p-3 md:p-4 text-center card-hover">
           <p className="text-xs font-medium text-amber-600 uppercase tracking-wide">At Risk</p>
-          <p className="text-3xl font-bold text-amber-700 mt-1">{amber}</p>
+          <p className="text-2xl md:text-3xl font-bold text-amber-700 mt-1">{amber}</p>
           <p className="text-xs text-amber-500 mt-0.5">facilities</p>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
+        <div className="stat-gradient-red border border-red-200 rounded-xl p-3 md:p-4 text-center card-hover">
           <p className="text-xs font-medium text-red-600 uppercase tracking-wide">Non-Compliant</p>
-          <p className="text-3xl font-bold text-red-700 mt-1">{red}</p>
+          <p className="text-2xl md:text-3xl font-bold text-red-700 mt-1">{red}</p>
           <p className="text-xs text-red-500 mt-0.5">facilities</p>
         </div>
       </div>
@@ -150,7 +185,7 @@ export default function AdminPage() {
           <p className="text-xs text-gray-400 mt-0.5">{facilities.length} registered facilities</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[600px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 {['Facility Name','State','Residents','Compliance %','Status','Last Active','Actions'].map(h => (
@@ -159,8 +194,8 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {facilities.map((fac) => (
-                <tr key={fac.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+              {facilities.map((fac, idx) => (
+                <tr key={fac.id} className={`border-b border-gray-50 hover:bg-green-50/20 transition-colors ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
                   <td className="px-4 py-4">
                     <div className="flex items-center gap-2">
                       <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${ragDot(fac.complianceStatus)}`} />
@@ -216,7 +251,7 @@ export default function AdminPage() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[700px]">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 {['Facility Name','Alert Email','Alert Mobile','Alert Time','Email','SMS',''].map((h, i) => (
@@ -225,8 +260,8 @@ export default function AdminPage() {
               </tr>
             </thead>
             <tbody>
-              {alertConfig.map(row => (
-                <tr key={row.id} className="border-b border-gray-50 hover:bg-gray-50/30 transition-colors">
+              {alertConfig.map((row, idx) => (
+                <tr key={row.id} className={`border-b border-gray-50 hover:bg-green-50/20 transition-colors ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
                   <td className="px-4 py-3">
                     <span className="font-medium text-gray-800 text-sm whitespace-nowrap">{row.name}</span>
                   </td>

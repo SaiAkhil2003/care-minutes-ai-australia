@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, Globe, X, Plus } from 'lucide-react';
+import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, X, Plus } from 'lucide-react';
 import { facility, manager } from '@/lib/dummyData';
 import { useLocalStorage } from '@/lib/useLocalStorage';
 
@@ -14,6 +14,88 @@ const DEFAULT_EMAIL_RECIPIENTS = [
 const DEFAULT_SMS_RECIPIENTS = [
   { id: 1, mobile: '0412 345 678', active: true },
 ];
+
+// ── Helper components defined OUTSIDE the page component to prevent remounting on re-render ──
+
+function SectionCard({ icon: Icon, title, children }) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6 transition-shadow hover:shadow-md">
+      <div className="flex items-center gap-2 mb-5 pb-3 border-b border-gray-100">
+        <Icon className="w-4 h-4 text-[#22c55e]" />
+        <h2 className="font-semibold text-gray-900">{title}</h2>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Field({ label, hint, children }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
+      {hint && <p className="text-xs text-gray-400 mb-1.5">{hint}</p>}
+      {children}
+    </div>
+  );
+}
+
+function SettingsInput({ value, onChange, placeholder, type = 'text', ...rest }) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      {...rest}
+      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
+    />
+  );
+}
+
+function Toggle({ checked, onChange, label }) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer group">
+      <div className="relative">
+        <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
+        <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${checked ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
+        <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-5' : ''}`} />
+      </div>
+      {label && <span className="text-sm text-gray-700">{label}</span>}
+    </label>
+  );
+}
+
+function SmallToggle({ checked, onChange }) {
+  return (
+    <label className="flex items-center gap-1.5 cursor-pointer">
+      <div className="relative">
+        <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
+        <div className={`w-8 h-4 rounded-full transition-colors duration-200 ${checked ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
+        <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform duration-200 ${checked ? 'translate-x-4' : ''}`} />
+      </div>
+      <span className="text-xs text-gray-500">{checked ? 'Active' : 'Inactive'}</span>
+    </label>
+  );
+}
+
+function SaveButton({ saving, saved, onClick, label = 'Save Settings' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={saving}
+      className="flex items-center gap-2 px-6 py-2.5 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 active:bg-green-700 transition-colors disabled:opacity-60 shadow-sm w-full sm:w-auto justify-center"
+    >
+      {saving ? (
+        <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</>
+      ) : saved ? (
+        <><Check className="w-4 h-4" /> Saved!</>
+      ) : (
+        <><Save className="w-4 h-4" /> {label}</>
+      )}
+    </button>
+  );
+}
 
 export default function SettingsPage() {
   const [saved,   setSaved]   = useState(false);
@@ -50,14 +132,6 @@ export default function SettingsPage() {
   const [mobileError,     setMobileError]     = useState('');
   const [recipientsSaved, setRecipientsSaved] = useState(false);
   const [recipientsSaving, setRecipientsSaving] = useState(false);
-
-  // ── Language & Regional ─────────────────────────────────────────────────────
-  const [language,    setLanguage]    = useLocalStorage('cm_language',    'en-AU');
-  const [dateFormat,  setDateFormat]  = useLocalStorage('cm_dateFormat',  'DD/MM/YYYY');
-  const [timezone,    setTimezone]    = useLocalStorage('cm_timezone',    'AEST');
-  const [showCents,   setShowCents]   = useLocalStorage('cm_showCents',   true);
-  const [langSaved,   setLangSaved]   = useState(false);
-  const [langSaving,  setLangSaving]  = useState(false);
 
   function handleSave(e) {
     e.preventDefault();
@@ -142,95 +216,6 @@ export default function SettingsPage() {
     }, 800);
   }
 
-  function handleLangSave() {
-    setLangSaving(true);
-    setTimeout(() => {
-      setLangSaving(false);
-      setLangSaved(true);
-      setTimeout(() => setLangSaved(false), 3000);
-    }, 800);
-  }
-
-  function SectionCard({ icon: Icon, title, children }) {
-    return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6">
-        <div className="flex items-center gap-2 mb-5 pb-3 border-b border-gray-100">
-          <Icon className="w-4 h-4 text-[#22c55e]" />
-          <h2 className="font-semibold text-gray-900">{title}</h2>
-        </div>
-        {children}
-      </div>
-    );
-  }
-
-  function Field({ label, hint, children }) {
-    return (
-      <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-        {hint && <p className="text-xs text-gray-400 mb-1.5">{hint}</p>}
-        {children}
-      </div>
-    );
-  }
-
-  function Input({ value, onChange, placeholder, type = 'text', ...rest }) {
-    return (
-      <input
-        type={type}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        {...rest}
-        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
-      />
-    );
-  }
-
-  function Toggle({ checked, onChange, label }) {
-    return (
-      <label className="flex items-center gap-3 cursor-pointer group">
-        <div className="relative">
-          <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
-          <div className={`w-11 h-6 rounded-full transition-colors ${checked ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
-          <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-5' : ''}`} />
-        </div>
-        {label && <span className="text-sm text-gray-700">{label}</span>}
-      </label>
-    );
-  }
-
-  function SmallToggle({ checked, onChange }) {
-    return (
-      <label className="flex items-center gap-1.5 cursor-pointer">
-        <div className="relative">
-          <input type="checkbox" className="sr-only" checked={checked} onChange={onChange} />
-          <div className={`w-8 h-4 rounded-full transition-colors ${checked ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
-          <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
-        </div>
-        <span className="text-xs text-gray-500">{checked ? 'Active' : 'Inactive'}</span>
-      </label>
-    );
-  }
-
-  function SaveButton({ saving, saved, onClick, label = 'Save Settings' }) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={saving}
-        className="flex items-center gap-2 px-6 py-2.5 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-60 shadow-sm"
-      >
-        {saving ? (
-          <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</>
-        ) : saved ? (
-          <><Check className="w-4 h-4" /> Saved!</>
-        ) : (
-          <><Save className="w-4 h-4" /> {label}</>
-        )}
-      </button>
-    );
-  }
-
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto">
 
@@ -246,11 +231,11 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <Field label="Facility Name">
-                <Input value={facName} onChange={e => setFacName(e.target.value)} placeholder="Sunrise Aged Care" />
+                <SettingsInput value={facName} onChange={e => setFacName(e.target.value)} placeholder="Sunrise Aged Care" />
               </Field>
             </div>
             <Field label="ABN">
-              <Input value={abn} onChange={e => setAbn(e.target.value)} placeholder="12 345 678 901" />
+              <SettingsInput value={abn} onChange={e => setAbn(e.target.value)} placeholder="12 345 678 901" />
             </Field>
             <Field label="State">
               <select
@@ -263,11 +248,11 @@ export default function SettingsPage() {
             </Field>
             <div className="sm:col-span-2">
               <Field label="Street Address">
-                <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="42 Sunrise Boulevard" />
+                <SettingsInput value={address} onChange={e => setAddress(e.target.value)} placeholder="42 Sunrise Boulevard" />
               </Field>
             </div>
             <Field label="Postcode (4 digits)">
-              <Input
+              <SettingsInput
                 value={postcode}
                 onChange={e => setPostcode(e.target.value.replace(/\D/,'').slice(0,4))}
                 placeholder="2150"
@@ -275,7 +260,7 @@ export default function SettingsPage() {
               />
             </Field>
             <Field label="Number of Residents">
-              <Input
+              <SettingsInput
                 type="number"
                 value={residents}
                 onChange={e => setResidents(e.target.value)}
@@ -291,14 +276,14 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <Field label="Manager Name">
-                <Input value={mgName} onChange={e => setMgName(e.target.value)} placeholder="Jennifer Roberts" />
+                <SettingsInput value={mgName} onChange={e => setMgName(e.target.value)} placeholder="Jennifer Roberts" />
               </Field>
             </div>
             <Field label="Email Address">
-              <Input type="email" value={mgEmail} onChange={e => setMgEmail(e.target.value)} placeholder="jennifer@facility.com.au" />
+              <SettingsInput type="email" value={mgEmail} onChange={e => setMgEmail(e.target.value)} placeholder="jennifer@facility.com.au" />
             </Field>
             <Field label="Phone (04XX XXX XXX)">
-              <Input value={mgPhone} onChange={e => setMgPhone(e.target.value)} placeholder="0412 345 678" />
+              <SettingsInput value={mgPhone} onChange={e => setMgPhone(e.target.value)} placeholder="0412 345 678" />
             </Field>
           </div>
         </SectionCard>
@@ -311,7 +296,7 @@ export default function SettingsPage() {
                 type="time"
                 value={alertTime}
                 onChange={e => setAlertTime(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e]"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] w-full sm:w-auto"
               />
             </Field>
             <div className="space-y-3">
@@ -328,7 +313,7 @@ export default function SettingsPage() {
             </div>
             {smsAlerts && (
               <Field label="SMS Phone Number">
-                <Input
+                <SettingsInput
                   value={smsPhone}
                   onChange={e => setSmsPhone(e.target.value)}
                   placeholder="0412 345 678"
@@ -371,7 +356,7 @@ export default function SettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-60 shadow-sm"
+            className="flex items-center gap-2 px-6 py-2.5 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 active:bg-green-700 transition-colors disabled:opacity-60 shadow-sm w-full sm:w-auto justify-center"
           >
             {saving ? (
               <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</>
@@ -405,13 +390,13 @@ export default function SettingsPage() {
               onChange={e => { setNewEmail(e.target.value); setEmailError(''); }}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addEmail())}
               placeholder="Email address"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
+              className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
             />
             <button
               type="button"
               onClick={addEmail}
               disabled={emailRecipients.length >= 5}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-green-600 active:bg-green-700 transition-colors disabled:opacity-40 shrink-0"
             >
               <Plus className="w-4 h-4" /> Add
             </button>
@@ -458,13 +443,13 @@ export default function SettingsPage() {
               onChange={e => { setNewMobile(e.target.value); setMobileError(''); }}
               onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addMobile())}
               placeholder="04XX XXX XXX"
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
+              className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] transition"
             />
             <button
               type="button"
               onClick={addMobile}
               disabled={smsRecipients.length >= 3}
-              className="flex items-center gap-1.5 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-green-600 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-medium hover:bg-green-600 active:bg-green-700 transition-colors disabled:opacity-40 shrink-0"
             >
               <Plus className="w-4 h-4" /> Add
             </button>
@@ -475,9 +460,9 @@ export default function SettingsPage() {
             <div className="space-y-2 mt-3">
               {smsRecipients.map(r => (
                 <div key={r.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <Smartphone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span className="text-sm text-gray-700">{r.mobile}</span>
+                    <span className="text-sm text-gray-700 truncate">{r.mobile}</span>
                   </div>
                   <div className="flex items-center gap-3 ml-3 shrink-0">
                     <SmallToggle checked={r.active} onChange={() => toggleMobile(r.id)} />
@@ -498,93 +483,6 @@ export default function SettingsPage() {
 
         <div className="flex justify-end">
           <SaveButton saving={recipientsSaving} saved={recipientsSaved} onClick={handleRecipientsSave} label="Save Recipients" />
-        </div>
-      </SectionCard>
-
-      {/* ── Language & Regional Settings ───────────────────────────────────── */}
-      <SectionCard icon={Globe} title="Language & Regional Settings">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-
-          {/* Language */}
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Language</label>
-            <select
-              value={language}
-              onChange={e => setLanguage(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
-            >
-              <option value="en-AU">🇦🇺 English (Australian)</option>
-              <option value="en-INT">🌐 English (International)</option>
-            </select>
-            <div className="mt-2 bg-gray-50 border border-gray-100 rounded-lg p-3">
-              {language === 'en-AU' ? (
-                <div>
-                  <p className="text-xs font-medium text-gray-600 mb-1">Australian English spelling</p>
-                  <p className="text-xs text-gray-400">colour, centre, organise, ageing, licence, recognise</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Government terms: ACQSC, AN-ACC, QFR, MyAgedCare, Base Care Tariff</p>
-                </div>
-              ) : (
-                <div>
-                  <p className="text-xs font-medium text-gray-600 mb-1">International English spelling</p>
-                  <p className="text-xs text-gray-400">color, center, organize, aging, license, recognize</p>
-                  <p className="text-xs text-gray-400 mt-0.5">Government terms: ACQSC, AN-ACC, QFR, MyAgedCare, Base Care Tariff</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Date Format */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Date Format</label>
-            <select
-              value={dateFormat}
-              onChange={e => setDateFormat(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
-            >
-              <option value="DD/MM/YYYY">DD/MM/YYYY — Australian default</option>
-              <option value="MM/DD/YYYY">MM/DD/YYYY — US format</option>
-              <option value="YYYY-MM-DD">YYYY-MM-DD — ISO format</option>
-            </select>
-          </div>
-
-          {/* Timezone */}
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Timezone</label>
-            <select
-              value={timezone}
-              onChange={e => setTimezone(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#22c55e] bg-white"
-            >
-              <option value="AEST">AEST — Australian Eastern Standard Time</option>
-              <option value="AEDT">AEDT — Australian Eastern Daylight Time</option>
-              <option value="ACST">ACST — Australian Central Standard Time</option>
-              <option value="AWST">AWST — Australian Western Standard Time</option>
-            </select>
-          </div>
-
-          {/* Currency */}
-          <div className="sm:col-span-2">
-            <label className="block text-xs font-medium text-gray-600 mb-2">Currency Display</label>
-            <div className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-gray-700">AUD $</p>
-                <p className="text-xs text-gray-400 mt-0.5">Australian Dollar (default)</p>
-              </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <div className="relative">
-                  <input type="checkbox" className="sr-only" checked={showCents} onChange={() => setShowCents(v => !v)} />
-                  <div className={`w-11 h-6 rounded-full transition-colors ${showCents ? 'bg-[#22c55e]' : 'bg-gray-200'}`} />
-                  <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${showCents ? 'translate-x-5' : ''}`} />
-                </div>
-                <span className="text-sm text-gray-600">Show cents</span>
-              </label>
-            </div>
-          </div>
-
-        </div>
-
-        <div className="flex justify-end mt-5">
-          <SaveButton saving={langSaving} saved={langSaved} onClick={handleLangSave} label="Save Language Settings" />
         </div>
       </SectionCard>
 

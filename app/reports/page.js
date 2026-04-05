@@ -115,31 +115,31 @@ export default function ReportsPage() {
         <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <FileText className="w-4 h-4 text-blue-600" /> ACQSC Audit Report
         </h2>
-        <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-4 items-end">
-          <div>
+        <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-3 sm:items-end">
+          <div className="flex-1 sm:flex-none">
             <label className="block text-xs font-medium text-gray-600 mb-1">From (DD/MM/YYYY)</label>
             <input
               type="text"
               value={fromDate}
               onChange={e => { setFromDate(e.target.value); setGenerated(false); }}
               placeholder="01/01/2026"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-36"
+              className="w-full sm:w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div>
+          <div className="flex-1 sm:flex-none">
             <label className="block text-xs font-medium text-gray-600 mb-1">To (DD/MM/YYYY)</label>
             <input
               type="text"
               value={toDate}
               onChange={e => { setToDate(e.target.value); setGenerated(false); }}
               placeholder="02/04/2026"
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-36"
+              className="w-full sm:w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <button
             type="submit"
             disabled={generating}
-            className="flex items-center gap-2 px-5 py-2 bg-[#1e293b] text-white rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60"
+            className="flex items-center justify-center gap-2 px-5 py-2 bg-[#1e293b] text-white rounded-lg text-sm font-semibold hover:bg-slate-700 active:bg-slate-800 transition-colors disabled:opacity-60 w-full sm:w-auto"
           >
             {generating
               ? <><RefreshCw className="w-4 h-4 animate-spin" /> Generating…</>
@@ -151,7 +151,7 @@ export default function ReportsPage() {
               type="button"
               onClick={handleDownload}
               disabled={downloading}
-              className="flex items-center gap-2 px-5 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-60"
+              className="flex items-center justify-center gap-2 px-5 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 active:bg-green-700 transition-colors disabled:opacity-60 w-full sm:w-auto"
             >
               {downloading
                 ? <><RefreshCw className="w-4 h-4 animate-spin" /> Preparing PDF…</>
@@ -258,7 +258,7 @@ export default function ReportsPage() {
               <h3 className="font-semibold text-gray-900">Daily Breakdown</h3>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[700px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     {['Date','Total Minutes','Target','Compliance','RN Minutes','RN Target','RN %','Status','Penalty'].map(h => (
@@ -267,8 +267,8 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {periodData.days.map((day) => (
-                    <tr key={day.date} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
+                  {periodData.days.map((day, idx) => (
+                    <tr key={day.date} className={`border-b border-gray-50 hover:bg-green-50/20 transition-colors ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
                       <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{toDisplay(day.date)}</td>
                       <td className="px-4 py-3 text-gray-700">{day.totalMinutes.toLocaleString()}</td>
                       <td className="px-4 py-3 text-gray-500">{day.targetMinutes.toLocaleString()}</td>

@@ -26,7 +26,7 @@ export default function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#1e293b] border-t border-white/10">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#1e293b] border-t border-white/10 safe-area-bottom">
       <div className="flex items-stretch overflow-x-auto scrollbar-hide">
         {navItems.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(href + '/');
@@ -34,14 +34,16 @@ export default function BottomNav() {
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-[64px] flex-1 transition-colors ${
-                active ? 'text-[#22c55e]' : 'text-slate-400 hover:text-white'
+              className={`relative flex flex-col items-center justify-center gap-0.5 px-2 py-2 min-w-[52px] flex-1 transition-all duration-150 ${
+                active ? 'text-[#22c55e]' : 'text-slate-400 active:text-white'
               }`}
             >
-              <Icon className="w-5 h-5 shrink-0" />
-              <span className="text-[10px] font-medium whitespace-nowrap">{label}</span>
+              <Icon className={`w-5 h-5 shrink-0 transition-transform duration-150 ${active ? 'scale-110' : ''}`} />
+              <span className={`text-[9px] font-medium whitespace-nowrap transition-all duration-150 ${active ? 'opacity-100' : 'opacity-70'}`}>
+                {label}
+              </span>
               {active && (
-                <span className="absolute bottom-0 h-0.5 w-8 bg-[#22c55e] rounded-t" />
+                <span className="absolute top-0 left-1/2 -translate-x-1/2 h-0.5 w-8 bg-[#22c55e] rounded-b-full" />
               )}
             </Link>
           );

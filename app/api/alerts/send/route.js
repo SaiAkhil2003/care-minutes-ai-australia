@@ -1,6 +1,8 @@
 import { Resend } from 'resend';
 import { shiftsByDate, facility, alerts as dummyAlerts } from '@/lib/dummyData';
 import { calculateDayCompliance, formatAUD, formatPct } from '@/lib/compliance';
+import { saveAlert } from '@/lib/db';
+import { SEED_FACILITY_ID } from '@/lib/seedData';
 
 const TODAY = '2026-04-02';
 
@@ -198,19 +200,30 @@ export async function POST() {
     return Response.json({ error: error.message || 'Failed to send email.' }, { status: 502 });
   }
 
+  const alertPayload = {
+    date:           TODAY,
+    status:         alert.status,
+    title:          `AI analysis sent — ${toDisplayDate(TODAY)}`,
+    message:        alert.message,
+    gaps:           alert.gaps           ?? [],
+    suggestedStaff: alert.suggestedStaff ?? [],
+    sentViaEmail:   true,
+  };
+
+  // Persist to Supabase (best-effort — don't fail the response if DB is unavailable)
+  try {
+    await saveAlert(SEED_FACILITY_ID, alertPayload);
+  } catch (dbErr) {
+    console.warn('[alerts/send] Could not save alert to DB:', dbErr?.message);
+  }
+
   return Response.json({
     success: true,
     messageId: data?.id,
     toEmail,
     alert: {
       id: `alert-sent-${Date.now()}`,
-      date: TODAY,
-      status: alert.status,
-      title: `AI analysis sent — ${toDisplayDate(TODAY)}`,
-      message: alert.message,
-      gaps: alert.gaps,
-      suggestedStaff: alert.suggestedStaff,
-      sentViaEmail: true,
+      ...alertPayload,
     },
   });
 }

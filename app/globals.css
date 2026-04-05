@@ -133,3 +133,118 @@
     @apply font-sans;
   }
 }
+
+/* ── Mobile Safe Area ── */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Scrollbar hide utility ── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Mobile: prevent text overflow globally ── */
+@media (max-width: 767px) {
+  h1, h2, h3, h4, p, span, td, th, label {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  /* All tables scroll horizontally */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Reduce font size on mobile for table content */
+  table {
+    font-size: 0.75rem;
+  }
+
+  /* Page content padding reduction */
+  .page-content {
+    padding: 1rem;
+  }
+}
+
+/* ── Smooth page transitions ── */
+main {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Card hover effects ── */
+.card-hover {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+
+/* ── Table row zebra + hover ── */
+.table-zebra tbody tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+.table-zebra tbody tr:hover {
+  background-color: #f0fdf4 !important;
+}
+
+/* ── Input focus enhancement ── */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+}
+
+/* ── Button active state ── */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+/* ── Smooth progress bar animation ── */
+@keyframes progressGrow {
+  from { width: 0; }
+}
+
+/* ── Skeleton loading animation ── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.375rem;
+}
+
+/* ── Subtle background pattern for body ── */
+body {
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.03) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* ── Gradient stat card colours ── */
+.stat-gradient-blue {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+}
+.stat-gradient-purple {
+  background: linear-gradient(135deg, #faf5ff 0%, #ede9fe 100%);
+}
+.stat-gradient-green {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+}
+.stat-gradient-red {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+}
+.stat-gradient-amber {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+}
