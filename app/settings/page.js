@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, X, Plus } from 'lucide-react';
+import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, X, Plus, CheckCircle, AlertTriangle, Zap } from 'lucide-react';
 import { facility, manager } from '@/lib/dummyData';
 import { useLocalStorage } from '@/lib/useLocalStorage';
 
@@ -100,6 +100,7 @@ function SaveButton({ saving, saved, onClick, label = 'Save Settings' }) {
 export default function SettingsPage() {
   const [saved,   setSaved]   = useState(false);
   const [saving,  setSaving]  = useState(false);
+  const [toast,   setToast]   = useState(null);
 
   // Facility details — persisted to localStorage
   const [facName,     setFacName]     = useLocalStorage('cm_facName',    facility.name);
@@ -120,6 +121,9 @@ export default function SettingsPage() {
   const [smsAlerts,   setSmsAlerts]   = useLocalStorage('cm_smsAlerts',  false);
   const [smsPhone,    setSmsPhone]    = useLocalStorage('cm_smsPhone',   '');
 
+  // Automated daily alert toggle
+  const [autoAlertEnabled, setAutoAlertEnabled] = useLocalStorage('cm_autoAlertEnabled', true);
+
   // AN-ACC
   const [anAccRate,   setAnAccRate]   = useLocalStorage('cm_anAccRate',  String(facility.anAccRate));
 
@@ -133,12 +137,18 @@ export default function SettingsPage() {
   const [recipientsSaved, setRecipientsSaved] = useState(false);
   const [recipientsSaving, setRecipientsSaving] = useState(false);
 
+  function showToast(message, type = 'success') {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  }
+
   function handleSave(e) {
     e.preventDefault();
     setSaving(true);
     setTimeout(() => {
       setSaving(false);
       setSaved(true);
+      showToast('Settings saved successfully');
       setTimeout(() => setSaved(false), 3000);
     }, 800);
   }
@@ -323,6 +333,31 @@ export default function SettingsPage() {
           </div>
         </SectionCard>
 
+        {/* ── Automated Daily Alert ── */}
+        <SectionCard icon={Zap} title="Automated Daily Alert">
+          <p className="text-sm text-gray-500 mb-5">
+            Automatically send a compliance summary email every morning at 07:00 AEST
+          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <Toggle
+              checked={autoAlertEnabled}
+              onChange={() => setAutoAlertEnabled(v => !v)}
+              label={autoAlertEnabled ? 'Automated alerts enabled' : 'Automated alerts disabled'}
+            />
+            {autoAlertEnabled ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-200 w-fit">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                Active — sends daily at 07:00 AEST
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-gray-100 text-gray-500 border border-gray-200 w-fit">
+                <span className="w-2 h-2 rounded-full bg-gray-400" />
+                Disabled — manual alerts only
+              </span>
+            )}
+          </div>
+        </SectionCard>
+
         {/* ── AN-ACC Settings ── */}
         <SectionCard icon={DollarSign} title="AN-ACC Settings">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -485,6 +520,22 @@ export default function SettingsPage() {
           <SaveButton saving={recipientsSaving} saved={recipientsSaved} onClick={handleRecipientsSave} label="Save Recipients" />
         </div>
       </SectionCard>
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div className={`fixed bottom-24 md:bottom-6 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-50 flex items-start gap-3 px-4 py-3.5 rounded-xl shadow-lg border text-sm font-medium md:max-w-sm
+          ${toast.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-green-50 border-green-200 text-green-800'}`}
+        >
+          {toast.type === 'error'
+            ? <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+            : <CheckCircle   className="w-4 h-4 shrink-0 mt-0.5 text-green-600" />
+          }
+          <span className="flex-1">{toast.message}</span>
+          <button onClick={() => setToast(null)} className="shrink-0 opacity-60 hover:opacity-100 transition-opacity ml-1">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
     </div>
   );

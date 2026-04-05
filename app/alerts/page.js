@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Bell, CheckCircle, AlertTriangle, Mail, RefreshCw, Zap, X, Database } from 'lucide-react';
+import { Bell, CheckCircle, AlertTriangle, Mail, RefreshCw, Zap, X, Database, Sparkles, Clock } from 'lucide-react';
 import { alerts as dummyAlerts } from '@/lib/dummyData';
 import { getAlerts, saveAlert, mapAlert } from '@/lib/db';
 import { SEED_FACILITY_ID } from '@/lib/seedData';
@@ -30,8 +30,15 @@ function Toast({ toast, onDismiss }) {
   );
 }
 
+// Dummy alerts with trigger/aiGenerated fields added for display
+const enrichedDummyAlerts = dummyAlerts.map(a => ({
+  ...a,
+  trigger:     'AUTO',
+  aiGenerated: false,
+}));
+
 export default function AlertsPage() {
-  const [alerts, setAlerts]         = useState(dummyAlerts);
+  const [alerts, setAlerts]         = useState(enrichedDummyAlerts);
   const [usingDb, setUsingDb]       = useState(false);
   const [dbLoading, setDbLoading]   = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -44,7 +51,7 @@ export default function AlertsPage() {
     try {
       const { data, error } = await getAlerts(SEED_FACILITY_ID);
       if (!error && data && data.length > 0) {
-        setAlerts(data.map(mapAlert));
+        setAlerts(data.map(a => ({ ...mapAlert(a), trigger: a.trigger || 'AUTO', aiGenerated: a.ai_generated || false })));
         setUsingDb(true);
       }
     } catch {
@@ -61,7 +68,7 @@ export default function AlertsPage() {
     setTimeout(() => setToast(null), 5000);
   }
 
-  // ── Generate alert ──────────────────────────────────────────────────────────
+  // ── Generate alert (manual trigger) ────────────────────────────────────────
   async function handleGenerate() {
     setGenerating(true);
     setGenerated(false);
@@ -72,7 +79,11 @@ export default function AlertsPage() {
 
       if (!res.ok || data.error) throw new Error(data.error || 'Failed to send alert.');
 
-      const newAlert = data.alert;
+      const newAlert = {
+        ...data.alert,
+        trigger:     'MANUAL',
+        aiGenerated: data.aiGenerated ?? false,
+      };
 
       // Save to Supabase if connected
       if (usingDb) {
@@ -86,7 +97,7 @@ export default function AlertsPage() {
           sentViaEmail:   true,
         });
         if (saved) {
-          setAlerts(prev => [mapAlert(saved), ...prev]);
+          setAlerts(prev => [{ ...mapAlert(saved), trigger: 'MANUAL', aiGenerated: data.aiGenerated ?? false }, ...prev]);
           setGenerated(true);
           showToast(`Alert sent to ${data.toEmail} and saved to database`);
           setTimeout(() => setGenerated(false), 3000);
@@ -94,7 +105,6 @@ export default function AlertsPage() {
         }
       }
 
-      // Fallback: add locally
       setAlerts(prev => [newAlert, ...prev]);
       setGenerated(true);
       showToast(`Alert sent to ${data.toEmail}`);
@@ -180,6 +190,22 @@ export default function AlertsPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
                 <span className="text-xs text-gray-500 whitespace-nowrap">{formatDate(alert.date)}</span>
+                {/* Trigger badge: AUTO or MANUAL */}
+                {alert.trigger === 'MANUAL' ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-bold whitespace-nowrap">
+                    <Zap className="w-3 h-3" /> MANUAL
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold whitespace-nowrap">
+                    <Clock className="w-3 h-3" /> AUTO
+                  </span>
+                )}
+                {/* AI Generated badge */}
+                {alert.aiGenerated && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-bold whitespace-nowrap">
+                    <Sparkles className="w-3 h-3" /> AI Generated
+                  </span>
+                )}
                 {alert.sentViaEmail && (
                   <span className="flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium whitespace-nowrap">
                     <Mail className="w-3 h-3" /> Email
@@ -195,7 +221,9 @@ export default function AlertsPage() {
                   <Zap className="w-3.5 h-3.5 text-white" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-gray-500 mb-1">CareMinutes AI Analysis</p>
+                  <p className="text-xs font-semibold text-gray-500 mb-1">
+                    {alert.aiGenerated ? 'Gemini AI · CareMinutes.ai Analysis' : 'CareMinutes AI Analysis'}
+                  </p>
                   <p className="text-sm text-gray-700 leading-relaxed">{alert.message}</p>
                 </div>
               </div>
