@@ -2,7 +2,7 @@ import { Resend } from 'resend';
 import { shiftsByDate, facility } from '@/lib/dummyData';
 import { calculateDayCompliance, formatAUD, formatPct } from '@/lib/compliance';
 import { callGemini, buildCompliancePrompt } from '@/lib/gemini';
-import { saveAlert } from '@/lib/db';
+import { saveAlert, getAlertRecipients } from '@/lib/db';
 import { SEED_FACILITY_ID } from '@/lib/seedData';
 
 const TODAY = '2026-04-02';
@@ -154,15 +154,29 @@ function buildEmailHtml({ compliance, aiMessage, date, toEmail }) {
 export async function POST() {
   const apiKey    = process.env.RESEND_API_KEY;
   const fromEmail = process.env.ALERT_FROM_EMAIL;
-  const toEmail   = process.env.ALERT_TO_EMAIL;
   const geminiKey = process.env.GEMINI_API_KEY;
 
-  if (!apiKey || !fromEmail || !toEmail) {
+  if (!apiKey || !fromEmail) {
     return Response.json(
-      { error: 'Missing email configuration. Check RESEND_API_KEY, ALERT_FROM_EMAIL, ALERT_TO_EMAIL in .env.local.' },
+      { error: 'Missing email configuration. Check RESEND_API_KEY and ALERT_FROM_EMAIL in .env.local.' },
       { status: 500 }
     );
   }
+
+  // Read active recipients from Supabase
+  const { data: recipientData } = await getAlertRecipients(SEED_FACILITY_ID);
+  const activeEmails = (recipientData?.email_recipients ?? [])
+    .filter(r => r.active)
+    .map(r => r.email);
+
+  if (!activeEmails.length) {
+    return Response.json(
+      { error: 'No active email recipients configured. Add recipients in Settings.' },
+      { status: 400 }
+    );
+  }
+
+  const toEmail = activeEmails.join(', ');
 
   // Build compliance data for today
   const todayShifts = shiftsByDate[TODAY] || [];
@@ -193,7 +207,7 @@ export async function POST() {
   const resend = new Resend(apiKey);
   const { data, error } = await resend.emails.send({
     from:    fromEmail,
-    to:      toEmail,
+    to:      activeEmails,
     subject: `CareMinutes.ai Daily Alert — ${facility.name} ${toDisplayDate(TODAY)}`,
     html,
   });

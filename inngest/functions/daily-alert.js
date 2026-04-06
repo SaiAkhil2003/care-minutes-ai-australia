@@ -2,6 +2,8 @@ import { inngest } from '../client.js';
 import { facility, shiftsByDate, trendDates } from '@/lib/dummyData';
 import { calculateDayCompliance, formatAUD, formatPct } from '@/lib/compliance';
 import { callGemini, buildCompliancePrompt } from '@/lib/gemini';
+import { getAlertRecipients } from '@/lib/db';
+import { SEED_FACILITY_ID } from '@/lib/seedData';
 import { Resend } from 'resend';
 
 // ── RAG colour helpers ────────────────────────────────────────────────────────
@@ -182,13 +184,15 @@ export const dailyAlertFunction = inngest.createFunction(
       };
     });
 
-    // Step 3: Get recipient email (server-side — cannot read localStorage)
-    const toEmail = await step.run('get-recipient-email', async () => {
-      return process.env.ALERT_TO_EMAIL || '';
+    // Step 3: Get active recipients from Supabase
+    const activeEmails = await step.run('get-recipient-emails', async () => {
+      const { data } = await getAlertRecipients(SEED_FACILITY_ID);
+      const recipients = data?.email_recipients ?? [];
+      return recipients.filter(r => r.active).map(r => r.email);
     });
 
-    if (!toEmail) {
-      return { status: 'error', message: 'ALERT_TO_EMAIL not configured.' };
+    if (!activeEmails.length) {
+      return { status: 'error', message: 'No active email recipients configured.' };
     }
 
     // Step 4: Build Gemini prompt + call AI
@@ -203,7 +207,7 @@ export const dailyAlertFunction = inngest.createFunction(
       return callGemini(prompt);
     });
 
-    // Step 5: Build HTML email + send via Resend
+    // Step 5: Build HTML email + send via Resend to all active recipients
     const sendResult = await step.run('send-email', async () => {
       const { date, facilityName, compliance } = complianceData;
       const [y, m, d] = date.split('-');
@@ -214,26 +218,26 @@ export const dailyAlertFunction = inngest.createFunction(
         date,
         compliance,
         aiMessage,
-        toEmail,
+        toEmail: activeEmails.join(', '),
       });
 
       const resend = new Resend(process.env.RESEND_API_KEY);
       const { data, error } = await resend.emails.send({
         from:    process.env.ALERT_FROM_EMAIL,
-        to:      toEmail,
+        to:      activeEmails,
         subject: `CareMinutes.ai Daily Alert — ${facilityName} ${displayDate}`,
         html,
       });
 
       if (error) throw new Error(error.message || 'Resend failed');
 
-      return { messageId: data?.id, toEmail };
+      return { messageId: data?.id, toEmails: activeEmails };
     });
 
     return {
       status:    'sent',
       messageId: sendResult.messageId,
-      toEmail:   sendResult.toEmail,
+      toEmails:  sendResult.toEmails,
       ragStatus: complianceData.compliance.ragStatus,
     };
   }

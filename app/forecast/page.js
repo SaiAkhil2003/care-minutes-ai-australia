@@ -78,7 +78,7 @@ export default function ForecastPage() {
   const gaugeValue    = Math.min(compliancePct * 100, 100);
   const gaugeData     = [{ name: 'Compliance', value: gaugeValue, fill: gaugeColour(compliancePct) }];
 
-  const penaltyRows = q2Period.days.filter(d => !d.isCompliant).map(d => ({
+  const penaltyRows = q2Period.days.filter(d => d.ragStatus === 'RED').map(d => ({
     date:       formatDate(d.date),
     status:     d.ragStatus,
     residents:  facility.residentCount,
@@ -114,7 +114,7 @@ export default function ForecastPage() {
           <p className={`text-xl md:text-2xl font-bold mt-1 ${q2Period.totalPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
             {formatAUD(q2Period.totalPenalty)}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{q2Period.nonCompliantDays} non-compliant days</p>
+          <p className="text-xs text-gray-400 mt-0.5">{q2Period.days.filter(d => d.ragStatus === 'RED').length} RED days</p>
         </div>
         <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${projection.projectedTotalPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projected Penalty</p>

@@ -306,7 +306,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {!todayData.isCompliant && (
+            {todayData.ragStatus === 'RED' && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
                 <p className="text-sm text-red-700 font-medium">
                   ⚠ {todayData.minutesGap.toLocaleString()} minutes short of today's target.
@@ -314,15 +314,35 @@ export default function DashboardPage() {
                 </p>
               </div>
             )}
+            {todayData.ragStatus === 'AMBER' && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                <p className="text-sm text-amber-700 font-medium">
+                  ⚠ {todayData.minutesGap.toLocaleString()} minutes below target — no penalty yet but at risk.
+                  Reach 100% to secure full compliance.
+                </p>
+              </div>
+            )}
 
             <div className={`flex items-center justify-between rounded-lg p-3 gap-2 ${
-              todayData.penaltyAmount > 0 ? 'bg-red-50 border border-red-200' : 'bg-green-50 border border-green-200'
+              todayData.ragStatus === 'RED'   ? 'bg-red-50 border border-red-200' :
+              todayData.ragStatus === 'AMBER' ? 'bg-amber-50 border border-amber-200' :
+                                                'bg-green-50 border border-green-200'
             }`}>
-              <span className={`text-sm font-medium ${todayData.penaltyAmount > 0 ? 'text-red-700' : 'text-green-700'}`}>
+              <span className={`text-sm font-medium ${
+                todayData.ragStatus === 'RED'   ? 'text-red-700' :
+                todayData.ragStatus === 'AMBER' ? 'text-amber-700' :
+                                                  'text-green-700'
+              }`}>
                 Penalty at risk today
               </span>
-              <span className={`text-sm font-bold shrink-0 ${todayData.penaltyAmount > 0 ? 'text-red-700' : 'text-green-700'}`}>
-                {todayData.penaltyAmount > 0 ? formatAUD(todayData.penaltyAmount) : 'None — compliant ✓'}
+              <span className={`text-sm font-bold shrink-0 ${
+                todayData.ragStatus === 'RED'   ? 'text-red-700' :
+                todayData.ragStatus === 'AMBER' ? 'text-amber-700' :
+                                                  'text-green-700'
+              }`}>
+                {todayData.ragStatus === 'RED'   ? formatAUD(todayData.penaltyAmount) :
+                 todayData.ragStatus === 'AMBER' ? formatAUD(0) :
+                                                   'None — compliant ✓'}
               </span>
             </div>
           </div>

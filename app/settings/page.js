@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, X, Plus, CheckCircle, AlertTriangle, Zap } from 'lucide-react';
 import { facility, manager } from '@/lib/dummyData';
 import { useLocalStorage } from '@/lib/useLocalStorage';
@@ -128,14 +128,28 @@ export default function SettingsPage() {
   const [anAccRate,   setAnAccRate]   = useLocalStorage('cm_anAccRate',  String(facility.anAccRate));
 
   // ── Alert Recipients ────────────────────────────────────────────────────────
-  const [emailRecipients, setEmailRecipients] = useLocalStorage('cm_emailRecipients', DEFAULT_EMAIL_RECIPIENTS);
-  const [smsRecipients,   setSmsRecipients]   = useLocalStorage('cm_smsRecipients',   DEFAULT_SMS_RECIPIENTS);
-  const [newEmail,        setNewEmail]        = useState('');
-  const [emailError,      setEmailError]      = useState('');
-  const [newMobile,       setNewMobile]       = useState('');
-  const [mobileError,     setMobileError]     = useState('');
-  const [recipientsSaved, setRecipientsSaved] = useState(false);
+  const [emailRecipients,  setEmailRecipients]  = useState(DEFAULT_EMAIL_RECIPIENTS);
+  const [smsRecipients,    setSmsRecipients]    = useState(DEFAULT_SMS_RECIPIENTS);
+  const [newEmail,         setNewEmail]         = useState('');
+  const [emailError,       setEmailError]       = useState('');
+  const [newMobile,        setNewMobile]        = useState('');
+  const [mobileError,      setMobileError]      = useState('');
+  const [recipientsSaved,  setRecipientsSaved]  = useState(false);
   const [recipientsSaving, setRecipientsSaving] = useState(false);
+  const [recipientsLoading, setRecipientsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    fetch('/api/settings/recipients')
+      .then(r => r.json())
+      .then(data => {
+        if (data.emailRecipients) setEmailRecipients(data.emailRecipients);
+        if (data.smsRecipients)   setSmsRecipients(data.smsRecipients);
+      })
+      .catch(() => {})
+      .finally(() => setRecipientsLoading(false));
+  }, []);
 
   function showToast(message, type = 'success') {
     setToast({ message, type });
@@ -217,13 +231,23 @@ export default function SettingsPage() {
     setSmsRecipients(prev => prev.map(r => r.id === id ? { ...r, active: !r.active } : r));
   }
 
-  function handleRecipientsSave() {
+  async function handleRecipientsSave() {
     setRecipientsSaving(true);
-    setTimeout(() => {
-      setRecipientsSaving(false);
+    try {
+      const res = await fetch('/api/settings/recipients', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ emailRecipients, smsRecipients }),
+      });
+      if (!res.ok) throw new Error('Save failed');
       setRecipientsSaved(true);
+      showToast('Recipients saved successfully');
       setTimeout(() => setRecipientsSaved(false), 3000);
-    }, 800);
+    } catch {
+      showToast('Failed to save recipients', 'error');
+    } finally {
+      setRecipientsSaving(false);
+    }
   }
 
   return (
@@ -415,7 +439,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2 mb-3">
             <Mail className="w-3.5 h-3.5 text-gray-400" />
             <h3 className="text-sm font-semibold text-gray-700">Email Recipients</h3>
-            <span className="text-xs text-gray-400">({emailRecipients.length}/5)</span>
+            <span className="text-xs text-gray-400">({mounted ? emailRecipients.length : 0}/5)</span>
           </div>
 
           <div className="flex gap-2 mb-2">
@@ -468,7 +492,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2 mb-3">
             <Smartphone className="w-3.5 h-3.5 text-gray-400" />
             <h3 className="text-sm font-semibold text-gray-700">SMS Recipients</h3>
-            <span className="text-xs text-gray-400">({smsRecipients.length}/3)</span>
+            <span className="text-xs text-gray-400">({mounted ? smsRecipients.length : 0}/3)</span>
           </div>
 
           <div className="flex gap-2 mb-2">
