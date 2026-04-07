@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Plus, Download, Upload, Pencil, Trash2, ClipboardList, X, Check, Database, RefreshCw } from 'lucide-react';
+import { Plus, Download, Upload, Pencil, Trash2, ClipboardList, X, Check, Database, RefreshCw, Filter } from 'lucide-react';
 import { shifts as dummyShifts, staff as dummyStaff, facility } from '@/lib/dummyData';
 import { calculateDayCompliance, formatAUD } from '@/lib/compliance';
 import { getShifts, addShift, updateShift, deleteShift, getStaff, logShiftHistory, mapShift, mapStaff } from '@/lib/db';
@@ -40,7 +40,22 @@ function getWeek(isoDate) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
-const THIS_WEEK = getWeek('2026-04-02');
+// ─── Date filter ranges (relative to TODAY = 2026-04-07, a Tuesday) ───────────
+// Mon of this week: Apr 7 − 1 = Apr 6  |  Sun: Apr 12
+// Mon of last week: Mar 30              |  Sun: Apr 5
+// This month: Apr 1 – Apr 30
+
+const DATE_FILTERS = ['Today', 'This Week', 'Last Week', 'This Month', 'Custom'];
+const DEFAULT_FILTER = 'This Week';
+
+const FILTER_RANGES = {
+  'Today':      { from: '2026-04-07', to: '2026-04-07' },
+  'This Week':  { from: '2026-04-06', to: '2026-04-12' },
+  'Last Week':  { from: '2026-03-30', to: '2026-04-05' },
+  'This Month': { from: '2026-04-01', to: '2026-04-30' },
+};
+
+const THIS_WEEK = getWeek('2026-04-07');
 
 const CSV_TEMPLATE = `Date (DD/MM/YYYY),Staff Name,Role,Start Time (HH:MM),End Time (HH:MM)
 02/04/2026,Sarah Chen,RN,07:00,15:00
@@ -57,12 +72,18 @@ export default function ShiftsPage() {
   const [usingDb, setUsingDb] = useState(false);
   const [dbLoading, setDbLoading] = useState(true);
 
-  const [form, setForm]         = useState({ staffId: '', date: '02/04/2026', startTime: '', endTime: '' });
+  const [form, setForm]         = useState({ staffId: '', date: '07/04/2026', startTime: '', endTime: '' });
   const [editId, setEditId]     = useState(null);
   const [editForm, setEditForm] = useState({});
   const [auditId, setAuditId]   = useState(null);
   const [loading, setLoading]   = useState(false);
   const [success, setSuccess]   = useState(false);
+
+  // ── Date filter state ────────────────────────────────────────────────────────
+  const [activeFilter, setActiveFilter]   = useState(DEFAULT_FILTER);
+  const [customFrom, setCustomFrom]       = useState('');
+  const [customTo, setCustomTo]           = useState('');
+  const [showCustom, setShowCustom]       = useState(false);
 
   // ── Load from Supabase ──────────────────────────────────────────────────────
   const loadFromDb = useCallback(async () => {
@@ -93,15 +114,61 @@ export default function ShiftsPage() {
   const selectedStaff = staff.find(s => s.id === form.staffId);
   const duration      = calcDuration(form.startTime, form.endTime);
 
-  // This week's minutes
+  // ── Filtered shifts based on active date filter ─────────────────────────────
+  const filteredShifts = useMemo(() => {
+    let from, to;
+    if (activeFilter === 'Custom') {
+      from = customFrom;
+      to   = customTo;
+    } else if (FILTER_RANGES[activeFilter]) {
+      from = FILTER_RANGES[activeFilter].from;
+      to   = FILTER_RANGES[activeFilter].to;
+    }
+    if (!from || !to) return shifts;
+    return shifts.filter(s => s.date >= from && s.date <= to);
+  }, [shifts, activeFilter, customFrom, customTo]);
+
+  const filteredMinutes = filteredShifts.reduce((a, s) => a + s.durationMinutes, 0);
+
+  // Determine the label for the summary bar
+  const filterLabel = activeFilter === 'Custom'
+    ? (customFrom && customTo ? `${toDisplay(customFrom)} – ${toDisplay(customTo)}` : 'Custom')
+    : activeFilter;
+
+  // Days in period for target calculation
+  const filterDayCount = useMemo(() => {
+    let from, to;
+    if (activeFilter === 'Custom') { from = customFrom; to = customTo; }
+    else if (FILTER_RANGES[activeFilter]) { from = FILTER_RANGES[activeFilter].from; to = FILTER_RANGES[activeFilter].to; }
+    if (!from || !to) return 7;
+    const diff = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+    return Math.max(1, diff);
+  }, [activeFilter, customFrom, customTo]);
+
+  const periodTarget = facility.residentCount * 215 * filterDayCount;
+
+  // This week totals (kept for reference)
   const weekShifts = useMemo(() => shifts.filter(s => getWeek(s.date) === THIS_WEEK), [shifts]);
   const weekMinutes = weekShifts.reduce((a, s) => a + s.durationMinutes, 0);
   const weekTarget  = facility.residentCount * 215 * 7;
 
-  // Sorted shifts (newest first)
+  // Sorted filtered shifts (newest first)
   const sortedShifts = useMemo(() =>
-    [...shifts].sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime)),
-  [shifts]);
+    [...filteredShifts].sort((a, b) => b.date.localeCompare(a.date) || a.startTime.localeCompare(b.startTime)),
+  [filteredShifts]);
+
+  function handleFilterSelect(f) {
+    setActiveFilter(f);
+    if (f === 'Custom') { setShowCustom(true); }
+    else { setShowCustom(false); }
+  }
+
+  function clearFilter() {
+    setActiveFilter(DEFAULT_FILTER);
+    setShowCustom(false);
+    setCustomFrom('');
+    setCustomTo('');
+  }
 
   // ── Add shift ───────────────────────────────────────────────────────────────
   async function handleAdd(e) {
@@ -133,7 +200,7 @@ export default function ShiftsPage() {
       setShifts(prev => [...prev, { id: `local-${Date.now()}`, ...newShift }]);
     }
 
-    setForm({ staffId: '', date: '02/04/2026', startTime: '', endTime: '' });
+    setForm({ staffId: '', date: '07/04/2026', startTime: '', endTime: '' });
     setLoading(false);
     setSuccess(true);
     setTimeout(() => setSuccess(false), 2500);
@@ -261,26 +328,88 @@ export default function ShiftsPage() {
         </div>
       </div>
 
-      {/* ── This Week Summary ── */}
+      {/* ── Date Filter Bar ── */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-4 card-hover">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="w-4 h-4 text-gray-400 shrink-0" />
+            {/* Desktop: button group */}
+            <div className="hidden sm:flex gap-1 flex-wrap">
+              {DATE_FILTERS.map(f => (
+                <button
+                  key={f}
+                  onClick={() => handleFilterSelect(f)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                    activeFilter === f
+                      ? 'bg-[#22c55e] text-white border-[#22c55e]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-green-300 hover:bg-green-50'
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            {/* Mobile: dropdown */}
+            <select
+              className="sm:hidden border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              value={activeFilter}
+              onChange={e => handleFilterSelect(e.target.value)}
+            >
+              {DATE_FILTERS.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+            {/* Active filter badge */}
+            {activeFilter !== DEFAULT_FILTER && (
+              <span className="flex items-center gap-1 px-2.5 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full border border-green-200">
+                Showing: {filterLabel}
+                <button onClick={clearFilter} className="ml-1 hover:text-green-600 transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+          </div>
+          {/* Custom date range pickers */}
+          {showCustom && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <label className="text-xs text-gray-500 shrink-0">From</label>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={e => setCustomFrom(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <label className="text-xs text-gray-500 shrink-0">To</label>
+              <input
+                type="date"
+                value={customTo}
+                onChange={e => setCustomTo(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Period Summary ── */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6 card-hover">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">This Week</p>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{filterLabel}</p>
             <p className="text-lg font-bold text-gray-900 mt-0.5">
-              {weekMinutes.toLocaleString()} / {weekTarget.toLocaleString()} minutes
+              {filteredMinutes.toLocaleString()} / {periodTarget.toLocaleString()} minutes
             </p>
+            <p className="text-xs text-gray-400 mt-0.5">{filteredShifts.length} shift{filteredShifts.length !== 1 ? 's' : ''} in period</p>
           </div>
           <div className="flex-1 sm:max-w-xs">
             <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
               <div
                 className="h-3 rounded-full transition-all duration-700"
                 style={{
-                  width: `${Math.min((weekMinutes / weekTarget) * 100, 100)}%`,
-                  backgroundColor: weekMinutes >= weekTarget ? '#22c55e' : weekMinutes / weekTarget >= 0.85 ? '#f59e0b' : '#ef4444',
+                  width: `${Math.min((filteredMinutes / periodTarget) * 100, 100)}%`,
+                  backgroundColor: filteredMinutes >= periodTarget ? '#22c55e' : filteredMinutes / periodTarget >= 0.85 ? '#f59e0b' : '#ef4444',
                 }}
               />
             </div>
-            <p className="text-xs text-gray-400 mt-1">{((weekMinutes / weekTarget) * 100).toFixed(1)}% of weekly target</p>
+            <p className="text-xs text-gray-400 mt-1">{((filteredMinutes / periodTarget) * 100).toFixed(1)}% of {filterLabel.toLowerCase()} target</p>
           </div>
         </div>
       </div>
@@ -348,7 +477,9 @@ export default function ShiftsPage() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-4 md:px-5 py-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-900">Shifts Log</h2>
-          <p className="text-xs text-gray-400 mt-0.5">{shifts.length} shifts recorded</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {filteredShifts.length} of {shifts.length} shifts · {filterLabel}
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">

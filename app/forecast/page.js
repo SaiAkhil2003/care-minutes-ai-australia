@@ -20,12 +20,13 @@ import {
 // ─── Q2 2026: 01 Apr – 30 Jun (91 days) ──────────────────────────────────────
 
 const Q2_TOTAL_DAYS    = 91;
-const Q2_ELAPSED       = 2;
-const Q2_REMAINING     = Q2_TOTAL_DAYS - Q2_ELAPSED;
 const Q2_START         = '2026-04-01';
 const Q2_END           = '2026-06-30';
+const MIN_FORECAST_DAYS = 7;
 
-const Q2_DATES = trendDates.filter(d => d >= Q2_START);
+const Q2_DATES    = trendDates.filter(d => d >= Q2_START);
+const Q2_ELAPSED  = Q2_DATES.length;
+const Q2_REMAINING = Q2_TOTAL_DAYS - Q2_ELAPSED;
 
 function formatDate(iso) {
   const [y, m, d] = iso.split('-');
@@ -86,6 +87,14 @@ export default function ForecastPage() {
     total:      d.penaltyAmount,
   }));
 
+  const redDays   = q2Period.days.filter(d => d.ragStatus === 'RED').length;
+  const amberDays = q2Period.days.filter(d => d.ragStatus === 'AMBER').length;
+  const hasEnoughData = Q2_ELAPSED >= MIN_FORECAST_DAYS;
+
+  // Projected non-compliant: use actual non-compliance rate (includes AMBER + RED)
+  const actualNonComplianceRate = Q2_ELAPSED > 0 ? q2Period.nonCompliantDays / Q2_ELAPSED : 0;
+  const projectedNonCompliantDays = Math.round(actualNonComplianceRate * Q2_TOTAL_DAYS);
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
 
@@ -102,7 +111,7 @@ export default function ForecastPage() {
           <p className={`text-xl md:text-2xl font-bold mt-1 ${compliancePct >= 1 ? 'text-green-600' : compliancePct >= 0.85 ? 'text-amber-600' : 'text-red-600'}`}>
             {formatPct(compliancePct)}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{Q2_ELAPSED} days so far</p>
+          <p className="text-xs text-gray-400 mt-0.5">{Q2_ELAPSED} day{Q2_ELAPSED !== 1 ? 's' : ''} so far</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Days Remaining</p>
@@ -110,28 +119,58 @@ export default function ForecastPage() {
           <p className="text-xs text-gray-400 mt-0.5">of {Q2_TOTAL_DAYS} days</p>
         </div>
         <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${q2Period.totalPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Penalty Accrued</p>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Penalty Accrued (Q2)</p>
           <p className={`text-xl md:text-2xl font-bold mt-1 ${q2Period.totalPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
             {formatAUD(q2Period.totalPenalty)}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{q2Period.days.filter(d => d.ragStatus === 'RED').length} RED days</p>
+          <div className="mt-1 space-y-0.5">
+            <p className="text-xs text-red-600 font-medium">Penalty days (RED only): {redDays}</p>
+            <p className="text-xs text-amber-600 font-medium">AMBER days (at risk): {amberDays}</p>
+          </div>
         </div>
-        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${projection.projectedTotalPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
+        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${hasEnoughData && projection.projectedTotalPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projected Penalty</p>
-          <p className={`text-xl md:text-2xl font-bold mt-1 ${projection.projectedTotalPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {formatAUD(projection.projectedTotalPenalty)}
+          <p className={`text-xl md:text-2xl font-bold mt-1 ${hasEnoughData && projection.projectedTotalPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
+            {hasEnoughData ? formatAUD(projection.projectedTotalPenalty) : '—'}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">at current pace</p>
+          <p className="text-xs text-gray-400 mt-0.5">{hasEnoughData ? 'at current pace' : 'Need 7+ days data'}</p>
         </div>
       </div>
+
+      {/* ── Q1 Penalty Note ── */}
+      {q2Period.totalPenalty === 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-start gap-3">
+          <CheckCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-800">
+            <span className="font-semibold">No Q2 penalties yet.</span>
+            {' '}The $1,265.60 penalty visible in Alerts was recorded on 29 Mar 2026 (Q1 — before this quarter started).
+            Q2 began 01 Apr 2026.
+          </div>
+        </div>
+      )}
+
+      {/* ── Insufficient Data Notice ── */}
+      {!hasEnoughData && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Not enough data for accurate forecast.</p>
+            <p className="text-sm text-amber-700 mt-1">
+              Minimum {MIN_FORECAST_DAYS} days needed. Currently showing{' '}
+              <strong>{Q2_ELAPSED} day{Q2_ELAPSED !== 1 ? 's' : ''}</strong> of Q2 data.
+              Projections will appear once 7 days of Q2 data are available.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 md:gap-6">
 
         {/* ── Left: Gauge + Penalty Table ── */}
         <div className="xl:col-span-2 space-y-4 md:space-y-6">
 
-          {/* Compliance Gauge */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
+          {/* Compliance Gauge — shown only when enough data */}
+          {hasEnoughData && <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
             <h2 className="font-semibold text-gray-900 mb-1">Q2 Compliance Gauge</h2>
             <p className="text-xs text-gray-400 mb-4">Based on {Q2_ELAPSED} days of data — updates daily</p>
             <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -183,15 +222,24 @@ export default function ForecastPage() {
                 <div className="flex items-center gap-3">
                   <span className="w-3 h-3 rounded-full bg-[#f59e0b] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500">Projected non-compliant</p>
+                    <p className="text-xs text-gray-500">Projected non-compliant (all)</p>
                     <p className="font-semibold text-gray-900 text-sm">
-                      ~{Math.round(projection.nonComplianceRate * Q2_TOTAL_DAYS)} days for full quarter
+                      ~{projectedNonCompliantDays} days for full quarter
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="w-3 h-3 rounded-full bg-[#ef4444] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-gray-500">Projected penalty days (RED only)</p>
+                    <p className="font-semibold text-gray-900 text-sm">
+                      ~{Math.round(projection.nonComplianceRate * Q2_TOTAL_DAYS)} days · {formatAUD(projection.projectedTotalPenalty)}
                     </p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </div>}
 
           {/* Penalty Breakdown Table */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden card-hover">
@@ -240,8 +288,8 @@ export default function ForecastPage() {
           </div>
         </div>
 
-        {/* ── Right: Recovery Plan + What If ── */}
-        <div className="space-y-4 md:space-y-6">
+        {/* ── Right: Recovery Plan + What If — shown only when enough data ── */}
+        {hasEnoughData && <div className="space-y-4 md:space-y-6">
 
           {/* Recovery Plan */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
@@ -331,7 +379,7 @@ export default function ForecastPage() {
             )}
           </div>
 
-        </div>
+        </div>}
       </div>
     </div>
   );

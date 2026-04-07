@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Bell, CheckCircle, AlertTriangle, Mail, RefreshCw, Zap, X, Database, Sparkles, Clock } from 'lucide-react';
+import { Bell, CheckCircle, AlertTriangle, Mail, RefreshCw, Zap, X, Database, Sparkles, Clock, Phone } from 'lucide-react';
 import { alerts as dummyAlerts } from '@/lib/dummyData';
 import { getAlerts, saveAlert, mapAlert } from '@/lib/db';
 import { SEED_FACILITY_ID } from '@/lib/seedData';
@@ -9,6 +9,36 @@ import { SEED_FACILITY_ID } from '@/lib/seedData';
 function formatDate(iso) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
+}
+
+// Convert Australian mobile 04XX XXX XXX → +614XXXXXXXX
+function toIntlPhone(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('04')) {
+    return '+61' + digits.slice(1);
+  }
+  return phone;
+}
+
+// Render text with embedded Australian mobile numbers as clickable phone links
+function renderWithPhoneLinks(text) {
+  const phoneRegex = /04\d{2} \d{3} \d{3}/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = phoneRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    const phone = match[0];
+    parts.push(
+      <a key={match.index} href={`tel:${toIntlPhone(phone)}`}
+        className="text-blue-600 underline hover:text-blue-800 font-medium transition-colors">
+        {phone}
+      </a>
+    );
+    lastIndex = match.index + phone.length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length > 1 ? <>{parts}</> : text;
 }
 
 function Toast({ toast, onDismiss }) {
@@ -244,10 +274,11 @@ export default function AlertsPage() {
               {alert.suggestedStaff && alert.suggestedStaff.length > 0 && (
                 <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
                   <p className="text-xs font-semibold text-blue-700 mb-2 uppercase tracking-wide">Suggested Staff to Contact</p>
-                  <ul className="space-y-1">
+                  <ul className="space-y-1.5">
                     {alert.suggestedStaff.map((s, i) => (
                       <li key={i} className="text-xs text-blue-700 flex items-start gap-1.5">
-                        <span className="mt-0.5 shrink-0">→</span><span>{s}</span>
+                        <span className="mt-0.5 shrink-0">→</span>
+                        <span>{renderWithPhoneLinks(s)}</span>
                       </li>
                     ))}
                   </ul>

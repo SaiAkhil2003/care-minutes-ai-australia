@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   Users, Clock, TrendingUp, AlertTriangle, Star, ExternalLink,
-  CheckCircle, XCircle, Activity, Database,
+  CheckCircle, XCircle, Activity, Database, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { facility as dummyFacility, shiftsByDate as dummyShiftsByDate, trendDates as dummyTrendDates, TODAY } from '@/lib/dummyData';
 import {
@@ -35,6 +35,83 @@ function ragBg(status) {
   if (status === 'GREEN') return 'bg-green-100 text-green-800';
   if (status === 'AMBER') return 'bg-amber-100 text-amber-800';
   return 'bg-red-100 text-red-800';
+}
+
+// ─── Period filter helpers ─────────────────────────────────────────────────
+
+const PERIODS = [
+  { id: 'thisWeek',    label: 'This Week'    },
+  { id: 'lastWeek',   label: 'Last Week'    },
+  { id: 'thisMonth',  label: 'This Month'   },
+  { id: 'thisQuarter',label: 'This Quarter' },
+  { id: 'last30',     label: 'Last 30 Days' },
+];
+
+function generateDateRange(startISO, endISO) {
+  const dates = [];
+  const current = new Date(startISO + 'T00:00:00');
+  const end = new Date(endISO + 'T00:00:00');
+  while (current <= end) {
+    dates.push(current.toISOString().split('T')[0]);
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+
+function getPeriodDates(period, today) {
+  const todayD = new Date(today + 'T00:00:00');
+
+  function toISO(d) {
+    return d.toISOString().split('T')[0];
+  }
+
+  switch (period) {
+    case 'thisWeek': {
+      const dow = todayD.getDay(); // 0=Sun
+      const monday = new Date(todayD);
+      monday.setDate(todayD.getDate() - (dow === 0 ? 6 : dow - 1));
+      return generateDateRange(toISO(monday), today);
+    }
+    case 'lastWeek': {
+      const dow = todayD.getDay();
+      const thisMonday = new Date(todayD);
+      thisMonday.setDate(todayD.getDate() - (dow === 0 ? 6 : dow - 1));
+      const lastSunday = new Date(thisMonday);
+      lastSunday.setDate(thisMonday.getDate() - 1);
+      const lastMonday = new Date(lastSunday);
+      lastMonday.setDate(lastSunday.getDate() - 6);
+      return generateDateRange(toISO(lastMonday), toISO(lastSunday));
+    }
+    case 'thisMonth': {
+      const first = new Date(todayD.getFullYear(), todayD.getMonth(), 1);
+      return generateDateRange(toISO(first), today);
+    }
+    case 'thisQuarter': {
+      const q = Math.floor(todayD.getMonth() / 3);
+      const first = new Date(todayD.getFullYear(), q * 3, 1);
+      return generateDateRange(toISO(first), today);
+    }
+    case 'last30':
+    default: {
+      const start = new Date(todayD);
+      start.setDate(todayD.getDate() - 29);
+      return generateDateRange(toISO(start), today);
+    }
+  }
+}
+
+function groupByWeek(trendData) {
+  const weeks = {};
+  for (const day of trendData) {
+    const d = new Date(day.date + 'T00:00:00');
+    const dow = d.getDay(); // 0=Sun
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+    const key = monday.toISOString().split('T')[0];
+    if (!weeks[key]) weeks[key] = { key, monday, days: [] };
+    weeks[key].days.push(day);
+  }
+  return Object.values(weeks).sort((a, b) => a.key.localeCompare(b.key));
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -98,17 +175,88 @@ function StarRating({ rating }) {
 
 function TrendTooltip({ active, payload, label }) {
   if (!active || !payload || !payload.length) return null;
-  const pct = payload[0]?.value;
+  const mainPayload = payload.find(p => p.value != null);
+  if (!mainPayload) return null;
+  const pct = mainPayload.value;
+  const isPartialDay = payload[0]?.payload?.isPartialDay;
   const status = pct >= 100 ? 'GREEN' : pct >= 85 ? 'AMBER' : 'RED';
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs">
       <p className="font-semibold text-gray-700 mb-1">{label}</p>
-      <p className="font-bold" style={{ color: ragColour(status) }}>
-        {pct?.toFixed(1)}% compliance
+      {isPartialDay ? (
+        <>
+          <p className="text-gray-400 italic mb-1">Today — data still updating</p>
+          <p className="font-bold" style={{ color: ragColour(status) }}>
+            {pct?.toFixed(1)}% so far
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="font-bold" style={{ color: ragColour(status) }}>
+            {pct?.toFixed(1)}% compliance
+          </p>
+          <p className={`mt-0.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${ragBg(status)}`}>
+            {status}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function WeekCard({ week, expanded, onToggle }) {
+  const compliant = week.days.filter(d => d.ragStatus === 'GREEN').length;
+  const amber = week.days.filter(d => d.ragStatus === 'AMBER').length;
+  const red = week.days.filter(d => d.ragStatus === 'RED').length;
+  const totalPenalty = week.days.reduce((s, d) => s + d.penaltyAmount, 0);
+
+  return (
+    <div className="w-full md:w-auto md:min-w-[200px] md:shrink-0 border border-gray-100 rounded-lg p-3 bg-gray-50 hover:border-green-200 transition-colors">
+      <p className="text-xs font-semibold text-gray-600 mb-2">
+        Week of {formatDate(week.key)}
       </p>
-      <p className={`mt-0.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${ragBg(status)}`}>
-        {status}
-      </p>
+      <div className="space-y-0.5 text-xs">
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+          <span className="text-gray-700">{compliant} Compliant</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+          <span className="text-gray-700">{amber} At Risk</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+          <span className="text-gray-700">{red} Non-compliant</span>
+        </div>
+        <div className="flex items-center gap-1 pt-1.5 mt-0.5 border-t border-gray-200">
+          <span className="font-semibold text-gray-800">{formatAUD(totalPenalty)}</span>
+          <span className="text-gray-400">penalty</span>
+        </div>
+      </div>
+      <button
+        onClick={onToggle}
+        className="mt-2.5 w-full text-xs font-medium text-green-600 hover:text-green-800 border border-green-200 hover:border-green-400 rounded-md px-2 py-1.5 transition-colors bg-white"
+      >
+        {expanded ? 'Hide Details' : 'View Details'}
+      </button>
+      {expanded && (
+        <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+          {week.days.map(day => (
+            <div key={day.date} className="flex items-center justify-between text-xs gap-2">
+              <span className="text-gray-500">{formatDate(day.date)}</span>
+              <div className="flex items-center gap-1">
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: ragColour(day.ragStatus) }}
+                />
+                <span className="font-medium" style={{ color: ragColour(day.ragStatus) }}>
+                  {(day.compliancePct * 100).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -119,6 +267,11 @@ export default function DashboardPage() {
   const [dbShifts, setDbShifts]       = useState(null); // null = loading, [] = no data
   const [usingDb,  setUsingDb]        = useState(false);
   const [anAccRate]                   = useState(dummyFacility.anAccRate);
+
+  // Chart controls
+  const [activePeriod, setActivePeriod] = useState('last30');
+  const [windowOffset,  setWindowOffset]  = useState(0);
+  const [expandedWeek,  setExpandedWeek]  = useState(null);
 
   // Load shifts from Supabase — fall back to dummy data if error
   useEffect(() => {
@@ -152,37 +305,92 @@ export default function DashboardPage() {
   const activeTrendDates = useMemo(() => {
     if (!dbShifts) return dummyTrendDates;
     const dates = [...new Set(dbShifts.map(s => s.date))].sort();
-    return dates.slice(-14);
+    return dates.slice(-30);
   }, [dbShifts]);
 
   // Today's compliance
   const todayShifts = activeShiftsByDate[TODAY] || [];
   const todayData   = useMemo(() => calculateDayCompliance(todayShifts, dummyFacility.residentCount), [todayShifts]);
 
-  // 14-day period compliance
+  // 30-day period compliance (stat cards + right column)
   const periodData = useMemo(() => {
     const daily = activeTrendDates.map(date => ({ date, shifts: activeShiftsByDate[date] || [] }));
     return calculatePeriodCompliance(daily, dummyFacility.residentCount);
   }, [activeTrendDates, activeShiftsByDate]);
 
-  // 14-day trend chart data
-  const trendChartData = useMemo(() =>
-    periodData.days.map(d => ({
-      date:       formatDate(d.date),
-      compliance: parseFloat((d.compliancePct * 100).toFixed(1)),
-      status:     d.ragStatus,
-    })),
-  [periodData]);
+  // ── Chart period dates ────────────────────────────────────────────────────
+
+  const periodDates = useMemo(() => getPeriodDates(activePeriod, TODAY), [activePeriod]);
+
+  // Reset window to most recent 7 days whenever period changes
+  useEffect(() => {
+    setWindowOffset(Math.max(0, periodDates.length - 7));
+  }, [activePeriod, periodDates.length]);
+
+  // Trend data for the selected period
+  const periodTrendData = useMemo(() =>
+    periodDates.map(date => {
+      const shifts = activeShiftsByDate[date] || [];
+      const result = calculateDayCompliance(shifts, dummyFacility.residentCount);
+      return {
+        date,
+        compliance: parseFloat((result.compliancePct * 100).toFixed(1)),
+        status: result.ragStatus,
+        ragStatus: result.ragStatus,
+        compliancePct: result.compliancePct,
+        penaltyAmount: result.penaltyAmount,
+        isPartialDay: date === TODAY,
+      };
+    }),
+  [periodDates, activeShiftsByDate]);
+
+  // Current 7-day sliding window
+  const windowDays = useMemo(() =>
+    periodTrendData.slice(windowOffset, windowOffset + 7),
+  [periodTrendData, windowOffset]);
+
+  const maxWindowOffset = Math.max(0, periodDates.length - 7);
+  const isLastPartial = windowDays.length > 0 && windowDays[windowDays.length - 1].isPartialDay;
+
+  // Chart data: solid line + dashed segment for partial today
+  const windowChartData = useMemo(() =>
+    windowDays.map((d, i) => {
+      const isLast = i === windowDays.length - 1;
+      const isSecondToLast = i === windowDays.length - 2;
+      return {
+        date: formatDate(d.date),
+        // Solid line: null at partial day so line stops before it
+        compliance: isLastPartial && isLast ? null : d.compliance,
+        // Dashed line: only the last two points when today is partial
+        complianceDashed: isLastPartial && (isLast || isSecondToLast) ? d.compliance : null,
+        status: d.status,
+        isPartialDay: d.isPartialDay,
+      };
+    }),
+  [windowDays, isLastPartial]);
+
+  // Weekly summaries for the selected period
+  const weeklySummaries = useMemo(() => groupByWeek(periodTrendData), [periodTrendData]);
+
+  // Labels
+  const windowLabel = useMemo(() => {
+    if (windowDays.length === 0) return '';
+    return `${formatDate(windowDays[0].date)} — ${formatDate(windowDays[windowDays.length - 1].date)}`;
+  }, [windowDays]);
+
+  const dateRangeLabel = useMemo(() => {
+    if (periodDates.length === 0) return '—';
+    return `${formatDate(periodDates[0])} — ${formatDate(periodDates[periodDates.length - 1])}`;
+  }, [periodDates]);
 
   // Staff breakdown for today
   const staffBreakdown = useMemo(() => {
-    const agency  = todayShifts.filter(s => s.employmentType === 'Agency');
-    const byType  = (type) => todayShifts.filter(s => s.staffType === type).reduce((a, s) => a + s.durationMinutes, 0);
+    const byType = (type) => todayShifts.filter(s => s.staffType === type).reduce((a, s) => a + s.durationMinutes, 0);
     return {
       rn:     byType('RN'),
       en:     byType('EN'),
       pcw:    byType('PCW'),
-      agency: agency.reduce((a, s) => a + s.durationMinutes, 0),
+      agency: todayShifts.filter(s => s.employmentType === 'Agency').reduce((a, s) => a + s.durationMinutes, 0),
     };
   }, [todayShifts]);
 
@@ -243,7 +451,7 @@ export default function DashboardPage() {
           gradientClass="stat-gradient-purple"
         />
         <StatCard
-          title="14-Day Compliance"
+          title="30-Day Compliance"
           value={formatPct(complianceRate14)}
           sub={`${periodData.compliantDays}/${periodData.totalDays} days compliant`}
           icon={TrendingUp}
@@ -253,7 +461,7 @@ export default function DashboardPage() {
         <StatCard
           title="Penalty at Risk"
           value={formatAUD(penaltyAtRisk14)}
-          sub="Last 14 days"
+          sub="Last 30 days"
           icon={AlertTriangle}
           iconColour={penaltyAtRisk14 > 0 ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}
           gradientClass={penaltyAtRisk14 > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}
@@ -347,50 +555,161 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 14-Day Trend Chart */}
+          {/* ── Compliance Trend Chart — enhanced ── */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
-            <h2 className="font-semibold text-gray-900 mb-4">14-Day Compliance Trend</h2>
-            <div className="h-56 md:h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 9, fill: '#94a3b8' }}
-                    tickLine={false}
-                    axisLine={false}
-                    interval={1}
-                  />
-                  <YAxis
-                    domain={[60, 120]}
-                    tick={{ fontSize: 9, fill: '#94a3b8' }}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={v => `${v}%`}
-                  />
-                  <Tooltip content={<TrendTooltip />} />
-                  <ReferenceLine y={100} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: '100%', fill: '#22c55e', fontSize: 9, position: 'right' }} />
-                  <ReferenceLine y={85}  stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: '85%', fill: '#f59e0b', fontSize: 9, position: 'right' }} />
-                  <Line
-                    type="monotone"
-                    dataKey="compliance"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    dot={(props) => {
-                      const { cx, cy, payload } = props;
-                      const colour = ragColour(payload.status);
-                      return <circle key={cx} cx={cx} cy={cy} r={4} fill={colour} stroke="white" strokeWidth={2} />;
-                    }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <h2 className="font-semibold text-gray-900 mb-3">Compliance Trend</h2>
+
+            {/* Period filter tabs — horizontally scrollable on mobile */}
+            <div className="overflow-x-auto mb-2 -mx-1 px-1">
+              <div className="flex gap-1.5 min-w-max">
+                {PERIODS.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setActivePeriod(p.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all duration-150 whitespace-nowrap ${
+                      activePeriod === p.id
+                        ? 'bg-green-500 text-white border-green-500 shadow-sm'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-green-400 hover:text-green-600'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {/* Date range label */}
+            <p className="text-xs text-gray-400 mb-3">
+              Showing: {dateRangeLabel}
+            </p>
+
+            {/* Sliding window chart with arrow controls */}
+            <div className="flex items-center gap-2">
+              {/* Left arrow */}
+              <button
+                onClick={() => setWindowOffset(o => Math.max(0, o - 7))}
+                disabled={windowOffset === 0}
+                aria-label="Previous 7 days"
+                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full border transition-all ${
+                  windowOffset === 0
+                    ? 'border-gray-100 text-gray-300 cursor-not-allowed'
+                    : 'border-gray-300 text-gray-500 hover:border-green-500 hover:text-green-600 hover:bg-green-50'
+                }`}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              {/* Chart area */}
+              <div className="flex-1 h-56 md:h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={windowChartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 9, fill: '#94a3b8' }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      domain={[60, 120]}
+                      tick={{ fontSize: 9, fill: '#94a3b8' }}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={v => `${v}%`}
+                    />
+                    <Tooltip content={<TrendTooltip />} />
+                    <ReferenceLine y={100} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: '100%', fill: '#22c55e', fontSize: 9, position: 'right' }} />
+                    <ReferenceLine y={85}  stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: '85%', fill: '#f59e0b', fontSize: 9, position: 'right' }} />
+                    {/* Solid line — stops before partial day */}
+                    <Line
+                      type="monotone"
+                      dataKey="compliance"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      connectNulls={false}
+                      dot={(props) => {
+                        const { cx, cy, payload } = props;
+                        if (payload.compliance == null || cx == null || cy == null) return null;
+                        return <circle cx={cx} cy={cy} r={4} fill={ragColour(payload.status)} stroke="white" strokeWidth={2} />;
+                      }}
+                      activeDot={{ r: 6 }}
+                    />
+                    {/* Dashed line — partial day (today) segment */}
+                    <Line
+                      type="monotone"
+                      dataKey="complianceDashed"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      connectNulls
+                      dot={(props) => {
+                        const { cx, cy, payload } = props;
+                        if (!payload.isPartialDay || payload.complianceDashed == null || cx == null || cy == null) return null;
+                        return (
+                          <g>
+                            <circle cx={cx} cy={cy} r={4} fill={ragColour(payload.status)} stroke="white" strokeWidth={2} />
+                            <circle cx={cx} cy={cy} r={8} fill="none" stroke={ragColour(payload.status)} strokeWidth={1.5} opacity={0.4} />
+                          </g>
+                        );
+                      }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Right arrow */}
+              <button
+                onClick={() => setWindowOffset(o => Math.min(maxWindowOffset, o + 7))}
+                disabled={windowOffset >= maxWindowOffset}
+                aria-label="Next 7 days"
+                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-full border transition-all ${
+                  windowOffset >= maxWindowOffset
+                    ? 'border-gray-100 text-gray-300 cursor-not-allowed'
+                    : 'border-gray-300 text-gray-500 hover:border-green-500 hover:text-green-600 hover:bg-green-50'
+                }`}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Window info */}
+            <div className="flex items-center justify-between text-xs text-gray-400 mt-1.5 px-10">
+              <span>{windowLabel}</span>
+              <span>Showing {windowDays.length} of {periodDates.length} days</span>
+            </div>
+
+            {/* Legend */}
             <div className="flex items-center gap-3 mt-2 text-xs text-gray-500 flex-wrap">
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#22c55e] inline-block" /> Compliant</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] inline-block" /> At risk</span>
               <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] inline-block" /> Non-compliant</span>
+              {periodTrendData.some(d => d.isPartialDay) && (
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-5 border-b-2 border-dashed border-blue-400" />
+                  <span>Today (updating)</span>
+                </span>
+              )}
             </div>
+          </div>
+
+          {/* ── Weekly Summary Cards ── */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
+            <h2 className="font-semibold text-gray-900 mb-3">Weekly Summary</h2>
+            {weeklySummaries.length === 0 ? (
+              <p className="text-sm text-gray-400">No data available for this period.</p>
+            ) : (
+              <div className="flex flex-col md:flex-row gap-3 overflow-x-auto pb-1">
+                {weeklySummaries.map(week => (
+                  <WeekCard
+                    key={week.key}
+                    week={week}
+                    expanded={expandedWeek === week.key}
+                    onToggle={() => setExpandedWeek(prev => prev === week.key ? null : week.key)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Staff Breakdown */}
@@ -447,7 +766,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Star Rating */}
+          {/* Star Rating — temporarily hidden
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-1.5 rounded-lg bg-amber-50">
@@ -477,10 +796,11 @@ export default function DashboardPage() {
               View on MyAgedCare
             </a>
           </div>
+          */}
 
-          {/* 14-Day Summary */}
+          {/* 30-Day Summary */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
-            <h2 className="font-semibold text-gray-900 mb-4">14-Day Summary</h2>
+            <h2 className="font-semibold text-gray-900 mb-4">30-Day Summary</h2>
             <div className="space-y-2">
               {[
                 { label: 'Compliant days',     value: `${periodData.compliantDays} days`,    colour: 'text-green-600' },

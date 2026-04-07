@@ -7,6 +7,24 @@ import { useLocalStorage } from '@/lib/useLocalStorage';
 
 const STATES = ['NSW','VIC','QLD','SA','WA','TAS','NT','ACT'];
 
+// Convert Australian mobile 04XX XXX XXX → +614XXXXXXXX
+function toIntlPhone(phone) {
+  const digits = (phone || '').replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('04')) {
+    return '+61' + digits.slice(1);
+  }
+  return phone;
+}
+
+function PhoneLink({ phone }) {
+  if (!phone) return null;
+  return (
+    <a href={`tel:${toIntlPhone(phone)}`} className="text-blue-600 underline hover:text-blue-800 text-xs font-medium transition-colors">
+      {phone}
+    </a>
+  );
+}
+
 const DEFAULT_EMAIL_RECIPIENTS = [
   { id: 1, email: 'jennifer@sunriseagedcare.com.au', active: true },
   { id: 2, email: 'operations@sunriseagedcare.com.au', active: true },
@@ -318,6 +336,11 @@ export default function SettingsPage() {
             </Field>
             <Field label="Phone (04XX XXX XXX)">
               <SettingsInput value={mgPhone} onChange={e => setMgPhone(e.target.value)} placeholder="0412 345 678" />
+              {mgPhone && (
+                <p className="mt-1">
+                  <PhoneLink phone={mgPhone} /> <span className="text-xs text-gray-400">(tap to call)</span>
+                </p>
+              )}
             </Field>
           </div>
         </SectionCard>
@@ -521,7 +544,7 @@ export default function SettingsPage() {
                 <div key={r.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5">
                   <div className="flex items-center gap-3 min-w-0">
                     <Smartphone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span className="text-sm text-gray-700 truncate">{r.mobile}</span>
+                    <span className="text-sm truncate"><PhoneLink phone={r.mobile} /></span>
                   </div>
                   <div className="flex items-center gap-3 ml-3 shrink-0">
                     <SmallToggle checked={r.active} onChange={() => toggleMobile(r.id)} />

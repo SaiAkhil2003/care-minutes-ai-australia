@@ -10,6 +10,24 @@ const ROLES   = ['RN', 'EN', 'PCW'];
 const TYPES   = ['Permanent', 'Casual', 'Agency'];
 const FILTERS = ['All', 'RN', 'EN', 'PCW'];
 
+// Convert Australian mobile 04XX XXX XXX → +614XXXXXXXX
+function toIntlPhone(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('04')) {
+    return '+61' + digits.slice(1);
+  }
+  return phone;
+}
+
+function PhoneLink({ phone }) {
+  if (!phone) return '—';
+  return (
+    <a href={`tel:${toIntlPhone(phone)}`} className="text-blue-600 underline hover:text-blue-800 transition-colors">
+      {phone}
+    </a>
+  );
+}
+
 function roleBadge(role) {
   if (role === 'RN') return 'bg-blue-100 text-blue-700';
   if (role === 'EN') return 'bg-purple-100 text-purple-700';
@@ -279,7 +297,7 @@ export default function StaffPage() {
                       <td className="px-3 md:px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{s.name}</td>
                       <td className="px-3 md:px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-semibold ${roleBadge(s.role)}`}>{s.role}</span></td>
                       <td className="px-3 md:px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${typeBadge(s.employmentType)}`}>{s.employmentType}</span></td>
-                      <td className="px-3 md:px-4 py-3 text-gray-600 whitespace-nowrap">{s.phone || '—'}</td>
+                      <td className="px-3 md:px-4 py-3 whitespace-nowrap">{s.phone ? <PhoneLink phone={s.phone} /> : '—'}</td>
                       <td className="px-3 md:px-4 py-3 text-gray-600 max-w-[160px] truncate">{s.email || '—'}</td>
                       <td className="px-3 md:px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-medium ${s.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{s.status}</span></td>
                       <td className="px-3 md:px-4 py-3">
