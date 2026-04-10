@@ -7,8 +7,9 @@ import {
 import {
   Users, Clock, TrendingUp, AlertTriangle, Star, ExternalLink,
   CheckCircle, XCircle, Activity, Database, ChevronLeft, ChevronRight,
+  Stethoscope, ShieldAlert, ArrowRight,
 } from 'lucide-react';
-import { facility as dummyFacility, shiftsByDate as dummyShiftsByDate, trendDates as dummyTrendDates, TODAY } from '@/lib/dummyData';
+import { facility as dummyFacility, shiftsByDate as dummyShiftsByDate, trendDates as dummyTrendDates, TODAY, staff as dummyStaff } from '@/lib/dummyData';
 import {
   calculateDayCompliance,
   calculatePeriodCompliance,
@@ -261,6 +262,81 @@ function WeekCard({ week, expanded, onToggle }) {
   );
 }
 
+// ─── RN Coverage helpers (Feature 1) ─────────────────────────────────────────
+
+function getRnCoverage(shiftsForDate) {
+  const rnShifts = (shiftsForDate || []).filter(sh => sh.staffType === 'RN');
+  return Array.from({ length: 24 }, (_, h) => {
+    const covered = rnShifts.some(sh => {
+      const [startH] = sh.startTime.split(':').map(Number);
+      const [endH]   = sh.endTime.split(':').map(Number);
+      if (endH <= startH) return h >= startH || h < endH;
+      return h >= startH && h < endH;
+    });
+    return { hour: h, covered };
+  });
+}
+
+function findRnGaps(coverage) {
+  const gaps = [];
+  let gapStart = null;
+  for (let h = 0; h <= 24; h++) {
+    const notCovered = h < 24 && !coverage[h].covered;
+    if (notCovered && gapStart === null)  { gapStart = h; }
+    else if (!notCovered && gapStart !== null) { gaps.push({ start: gapStart, end: h }); gapStart = null; }
+  }
+  return gaps;
+}
+
+function fmtGap(gap) {
+  const f = h => h === 0 || h === 24 ? '12am' : h === 12 ? '12pm' : h < 12 ? `${h}am` : `${h - 12}pm`;
+  return `${f(gap.start)}–${f(gap.end)}`;
+}
+
+function MiniTimelineBar({ coverage }) {
+  return (
+    <div className="flex gap-px h-4 mt-2">
+      {coverage.map(({ hour, covered }) => (
+        <div
+          key={hour}
+          title={covered ? `RN covered ${hour}:00` : `No RN ${hour}:00`}
+          className={`flex-1 rounded-sm ${covered ? 'bg-green-500' : 'bg-red-400'}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── Qualification helpers (Feature 2) ────────────────────────────────────────
+
+const QUAL_LABELS = {
+  ahpraExpiry:          'AHPRA',
+  policeCheckExpiry:    'Police Check',
+  firstAidExpiry:       'First Aid',
+  wwcExpiry:            'WWC',
+  manualHandlingExpiry: 'Manual Handling',
+};
+
+function daysUntil(isoDate) {
+  if (!isoDate) return null;
+  const diff = new Date(isoDate + 'T00:00:00') - new Date(TODAY + 'T00:00:00');
+  return Math.round(diff / 86400000);
+}
+
+function getExpiringQuals(staffList, thresholdDays = 30) {
+  const results = [];
+  for (const member of staffList) {
+    for (const [key, label] of Object.entries(QUAL_LABELS)) {
+      if (!member[key]) continue;
+      const days = daysUntil(member[key]);
+      if (days !== null && days <= thresholdDays) {
+        results.push({ staffName: member.name, label, days, expiry: member[key] });
+      }
+    }
+  }
+  return results.sort((a, b) => a.days - b.days);
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -394,6 +470,14 @@ export default function DashboardPage() {
     };
   }, [todayShifts]);
 
+  // ── RN Coverage for today (Feature 1) ───────────────────────────────────────
+  const rnCoverage = useMemo(() => getRnCoverage(todayShifts), [todayShifts]);
+  const rnGaps     = useMemo(() => findRnGaps(rnCoverage), [rnCoverage]);
+  const rnCoveredH = rnCoverage.filter(c => c.covered).length;
+
+  // ── Expiring qualifications (Feature 2) ─────────────────────────────────────
+  const expiringQuals = useMemo(() => getExpiringQuals(dummyStaff, 30), []);
+
   // AN-ACC subsidy
   const totalDailySubsidy = dummyFacility.residentCount * anAccRate;
   const amountProtected   = todayData.isCompliant ? totalDailySubsidy : 0;
@@ -412,7 +496,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold text-gray-900">{dummyFacility.name}</h1>
             <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full border border-blue-200">
-              DEMO MODE
+              Preview Mode
             </span>
             {usingDb && (
               <span className="flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full border border-green-200">
@@ -554,6 +638,81 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
+
+          {/* ── RN Coverage Card (Feature 1) ── */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Stethoscope className="w-4 h-4 text-blue-600 shrink-0" />
+                <h2 className="font-semibold text-gray-900">24/7 RN Coverage — Today</h2>
+              </div>
+              <a href="/rn-coverage" className="text-xs text-green-600 hover:text-green-800 font-medium flex items-center gap-1">
+                View 7-day <ArrowRight className="w-3 h-3" />
+              </a>
+            </div>
+
+            <MiniTimelineBar coverage={rnCoverage} />
+
+            <div className="flex justify-between mt-1.5 text-xs text-gray-400 select-none mb-3">
+              <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>12am</span>
+            </div>
+
+            {rnGaps.length === 0 ? (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg p-3">
+                <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
+                <p className="text-sm font-semibold text-green-800">✓ Full 24/7 RN coverage today</p>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-800">⚠ RN Gap Detected</p>
+                  <p className="text-xs text-red-700 mt-0.5">No RN rostered {rnGaps.map(g => fmtGap(g)).join(', ')} today</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
+              <span><span className="font-semibold text-green-600">{rnCoveredH}h</span> covered</span>
+              <span><span className={`font-semibold ${24 - rnCoveredH > 0 ? 'text-red-500' : 'text-green-600'}`}>{24 - rnCoveredH}h</span> gap</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green-500 inline-block" /> RN present</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-400 inline-block" /> No RN</span>
+            </div>
+          </div>
+
+          {/* ── Qualification Warning Card (Feature 2) ── */}
+          {expiringQuals.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-amber-200 p-4 md:p-5 card-hover">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                  <h2 className="font-semibold text-gray-900">
+                    ⚠ {expiringQuals.length} Staff Qualification{expiringQuals.length !== 1 ? 's' : ''} Expiring Soon
+                  </h2>
+                </div>
+                <a href="/staff" className="text-xs text-green-600 hover:text-green-800 font-medium flex items-center gap-1 shrink-0">
+                  View All <ArrowRight className="w-3 h-3" />
+                </a>
+              </div>
+              <div className="space-y-2">
+                {expiringQuals.slice(0, 4).map((q, i) => (
+                  <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0 gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{q.staffName}</p>
+                      <p className="text-xs text-gray-500">{q.label} expires {new Date(q.expiry + 'T00:00:00').toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold shrink-0 ${
+                      q.days <= 7  ? 'bg-red-100 text-red-700'    :
+                      q.days <= 30 ? 'bg-amber-100 text-amber-700' :
+                                     'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {q.days <= 0 ? 'Expired' : `${q.days}d`}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* ── Compliance Trend Chart — enhanced ── */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">

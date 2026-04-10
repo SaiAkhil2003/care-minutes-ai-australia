@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, X, Plus, CheckCircle, AlertTriangle, Zap } from 'lucide-react';
+import { Save, Check, Building2, User, Bell, DollarSign, Mail, Smartphone, X, Plus, CheckCircle, AlertTriangle, Zap, ShieldCheck, ClipboardList, Trash2 } from 'lucide-react';
+import { shiftTemplates as dummyTemplates } from '@/lib/dummyData';
 import { facility, manager } from '@/lib/dummyData';
 import { useLocalStorage } from '@/lib/useLocalStorage';
 
@@ -144,6 +145,20 @@ export default function SettingsPage() {
 
   // AN-ACC
   const [anAccRate,   setAnAccRate]   = useLocalStorage('cm_anAccRate',  String(facility.anAccRate));
+
+  // ── Qualification tracking toggles (Feature 2) ──────────────────────────────
+  const [trackAhpra,         setTrackAhpra]         = useLocalStorage('cm_trackAhpra',         true);
+  const [trackPoliceCheck,   setTrackPoliceCheck]   = useLocalStorage('cm_trackPoliceCheck',   true);
+  const [trackWwc,           setTrackWwc]           = useLocalStorage('cm_trackWwc',           true);
+  const [trackFirstAid,      setTrackFirstAid]      = useLocalStorage('cm_trackFirstAid',      true);
+  const [trackManualHandling,setTrackManualHandling] = useLocalStorage('cm_trackManualHandling',true);
+  const [trackCovid,         setTrackCovid]         = useLocalStorage('cm_trackCovid',         false);
+
+  // ── Shift Templates (Feature 3) ─────────────────────────────────────────────
+  const [templates, setTemplates] = useLocalStorage('cm_shiftTemplates', dummyTemplates);
+  function deleteTemplate(id) {
+    setTemplates(prev => prev.filter(t => t.id !== id));
+  }
 
   // ── Alert Recipients ────────────────────────────────────────────────────────
   const [emailRecipients,  setEmailRecipients]  = useState(DEFAULT_EMAIL_RECIPIENTS);
@@ -564,8 +579,69 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex justify-end">
-          <SaveButton saving={recipientsSaving} saved={recipientsSaved} onClick={handleRecipientsSave} label="Save Recipients" />
+          <SaveButton saving={recipientsSaving} saved={recipientsSaved} onClick={handleRecipientsSave} label="Save Settings" />
         </div>
+      </SectionCard>
+
+      {/* ── Qualification Tracking (Feature 2) ── */}
+      <SectionCard icon={ShieldCheck} title="Qualification Tracking">
+        <p className="text-xs text-gray-500 mb-4">
+          Select which qualifications to track for expiry alerts. Alerts are sent 90, 60, 30 and 7 days before expiry.
+        </p>
+        <div className="space-y-3">
+          {[
+            { label: 'AHPRA Registration',    hint: 'Mandatory for RN and EN staff',  value: trackAhpra,          set: setTrackAhpra          },
+            { label: 'Police Check',          hint: 'Required for all care staff',     value: trackPoliceCheck,    set: setTrackPoliceCheck    },
+            { label: 'Working With Children', hint: 'Required in most states',         value: trackWwc,            set: setTrackWwc            },
+            { label: 'First Aid Certificate', hint: 'Annual renewal recommended',      value: trackFirstAid,       set: setTrackFirstAid       },
+            { label: 'Manual Handling',       hint: 'Annual competency check',         value: trackManualHandling, set: setTrackManualHandling },
+            { label: 'COVID Vaccination',     hint: 'Track vaccination date only',     value: trackCovid,          set: setTrackCovid          },
+          ].map(({ label, hint, value, set }) => (
+            <div key={label} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800">{label}</p>
+                <p className="text-xs text-gray-400">{hint}</p>
+              </div>
+              <Toggle checked={value} onChange={e => set(e.target.checked)} />
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {/* ── Shift Templates (Feature 3) ── */}
+      <SectionCard icon={ClipboardList} title="Shift Templates">
+        <p className="text-xs text-gray-500 mb-4">
+          Manage saved shift templates. Apply templates from the Shifts page to quickly populate a week.
+        </p>
+        {(!templates || templates.length === 0) ? (
+          <div className="text-center py-8 text-gray-400">
+            <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No templates saved yet.</p>
+            <p className="text-xs mt-1">Use "Save Week as Template" on the Shifts page.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {templates.map(t => (
+              <div key={t.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-4 py-3 gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{t.name}</p>
+                  {t.description && <p className="text-xs text-gray-500 truncate">{t.description}</p>}
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {t.shifts?.length || 0} shifts ·
+                    Created {new Date(t.createdAt + 'T00:00:00').toLocaleDateString('en-AU', { day:'2-digit', month:'2-digit', year:'numeric' })}
+                  </p>
+                </div>
+                <button
+                  onClick={() => deleteTemplate(t.id)}
+                  className="p-1.5 bg-red-50 text-red-500 rounded hover:bg-red-100 transition-colors shrink-0"
+                  title="Delete template"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </SectionCard>
 
       {/* ── Toast ── */}

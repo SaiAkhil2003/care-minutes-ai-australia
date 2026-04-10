@@ -9,34 +9,48 @@ import { TrendingUp, AlertTriangle, CheckCircle } from 'lucide-react';
 import { facility, shiftsByDate, trendDates } from '@/lib/dummyData';
 import {
   calculatePeriodCompliance,
-  projectQuarterPenalty,
-  calculateRecoveryPlan,
-  calculateWhatIfScenario,
   formatAUD,
-  formatPct,
   PENALTY_PER_RESIDENT_PER_DAY,
 } from '@/lib/compliance';
 
 // ─── Q2 2026: 01 Apr – 30 Jun (91 days) ──────────────────────────────────────
 
-const Q2_TOTAL_DAYS    = 91;
-const Q2_START         = '2026-04-01';
-const Q2_END           = '2026-06-30';
-const MIN_FORECAST_DAYS = 7;
+const Q2_TOTAL_DAYS = 91;
+const Q2_START      = '2026-04-01';
+const Q2_END        = '2026-06-30';
 
-const Q2_DATES    = trendDates.filter(d => d >= Q2_START);
-const Q2_ELAPSED  = Q2_DATES.length;
+const Q2_DATES     = trendDates.filter(d => d >= Q2_START);
+const Q2_ELAPSED   = Q2_DATES.length;
 const Q2_REMAINING = Q2_TOTAL_DAYS - Q2_ELAPSED;
+
+function fmtPct(pct100) {
+  return Math.min(pct100, 100).toFixed(1) + '%';
+}
+
+function fmtAUD(amount) {
+  const rounded = Math.round(Math.max(0, amount) * 100) / 100;
+  return formatAUD(rounded);
+}
 
 function formatDate(iso) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
 
-function gaugeColour(pct) {
-  if (pct >= 1)    return '#22c55e';
-  if (pct >= 0.85) return '#f59e0b';
+function gaugeColour(pct100) {
+  if (pct100 >= 100) return '#22c55e';
+  if (pct100 >= 85)  return '#f59e0b';
   return '#ef4444';
+}
+
+function StatusBadge({ pct100 }) {
+  if (pct100 >= 100) {
+    return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700">On Track</span>;
+  }
+  if (pct100 >= 85) {
+    return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">At Risk</span>;
+  }
+  return <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">Non-Compliant</span>;
 }
 
 function GaugeTooltip({ active, payload }) {
@@ -59,41 +73,50 @@ export default function ForecastPage() {
     calculatePeriodCompliance(q2DailyData, facility.residentCount),
   [q2DailyData]);
 
-  const projection = useMemo(() =>
-    projectQuarterPenalty(q2Period, facility.residentCount, Q2_REMAINING),
-  [q2Period]);
+  // ── Forecast Engine ──────────────────────────────────────────────────────────
+  // daysElapsed = days with at least one shift recorded in current quarter
+  const daysElapsed = Q2_DATES.filter(date => (shiftsByDate[date] || []).length > 0).length;
 
   const totalMinutesSoFar = q2Period.days.reduce((a, d) => a + d.totalMinutes, 0);
-  const recovery = useMemo(() =>
-    calculateRecoveryPlan(totalMinutesSoFar, facility.residentCount, Q2_ELAPSED, Q2_REMAINING),
-  [totalMinutesSoFar]);
 
-  const whatIf = useMemo(() =>
-    calculateWhatIfScenario(
-      extraShifts, 480, Q2_REMAINING, facility.residentCount,
-      q2Period.nonCompliantDays, totalMinutesSoFar, Q2_ELAPSED,
-    ),
-  [extraShifts, q2Period.nonCompliantDays, totalMinutesSoFar]);
+  const residentCount    = facility.residentCount;
+  const dailyAvgActual   = daysElapsed > 0 ? totalMinutesSoFar / daysElapsed : 0;
+  const projectedTotal   = dailyAvgActual * Q2_TOTAL_DAYS;
+  const projectedTarget  = residentCount > 0 ? residentCount * 215 * Q2_TOTAL_DAYS : 0;
+  const projectedPct     = projectedTarget > 0 ? (projectedTotal / projectedTarget) * 100 : 0;
+  const shortfallMins    = Math.max(0, projectedTarget - projectedTotal);
+  const projectedPenalty = Math.round((shortfallMins / 215) * 31.64 * 100) / 100;
 
-  const compliancePct = q2Period.overallCompliancePct;
-  const gaugeValue    = Math.min(compliancePct * 100, 100);
-  const gaugeData     = [{ name: 'Compliance', value: gaugeValue, fill: gaugeColour(compliancePct) }];
+  // ── Recovery Plan ───────────────────────────────────────────────────────────
+  const remainingMinutesNeeded = Math.max(0, projectedTarget - totalMinutesSoFar);
+  const minutesPerDayNeeded    = Q2_REMAINING > 0 ? remainingMinutesNeeded / Q2_REMAINING : 0;
+  // Extra minutes/day = shortfall spread across remaining days (on top of current pace)
+  const extraMinutesPerDay     = Q2_REMAINING > 0 ? shortfallMins / Q2_REMAINING : 0;
 
-  const penaltyRows = q2Period.days.filter(d => d.ragStatus === 'RED').map(d => ({
+  // ── What-If Scenario ────────────────────────────────────────────────────────
+  const extraMinutesPerWeek   = extraShifts * 480;
+  const extraMinutesRemaining = extraMinutesPerWeek * (Q2_REMAINING / 7);
+  const newProjectedTotal     = Math.min(projectedTotal + extraMinutesRemaining, projectedTarget);
+  const newProjectedPct       = projectedTarget > 0 ? (newProjectedTotal / projectedTarget) * 100 : 0;
+  const newShortfall          = Math.max(0, projectedTarget - newProjectedTotal);
+  const newPenalty            = Math.round((newShortfall / 215) * 31.64 * 100) / 100;
+  const penaltySaved          = Math.max(0, Math.round((projectedPenalty - newPenalty) * 100) / 100);
+
+  // ── Gauge ───────────────────────────────────────────────────────────────────
+  const gaugeValue = Math.min(projectedPct, 100);
+  const gaugeData  = [{ name: 'Compliance', value: gaugeValue, fill: gaugeColour(projectedPct) }];
+
+  // ── Penalty Table (historical RED days only) ─────────────────────────────
+  const penaltyRows   = q2Period.days.filter(d => d.ragStatus === 'RED').map(d => ({
     date:       formatDate(d.date),
     status:     d.ragStatus,
-    residents:  facility.residentCount,
+    residents:  residentCount,
     penaltyDay: PENALTY_PER_RESIDENT_PER_DAY,
     total:      d.penaltyAmount,
   }));
-
-  const redDays   = q2Period.days.filter(d => d.ragStatus === 'RED').length;
-  const amberDays = q2Period.days.filter(d => d.ragStatus === 'AMBER').length;
-  const hasEnoughData = Q2_ELAPSED >= MIN_FORECAST_DAYS;
-
-  // Projected non-compliant: use actual non-compliance rate (includes AMBER + RED)
-  const actualNonComplianceRate = Q2_ELAPSED > 0 ? q2Period.nonCompliantDays / Q2_ELAPSED : 0;
-  const projectedNonCompliantDays = Math.round(actualNonComplianceRate * Q2_TOTAL_DAYS);
+  const redDays       = q2Period.days.filter(d => d.ragStatus === 'RED').length;
+  const amberDays     = q2Period.days.filter(d => d.ragStatus === 'AMBER').length;
+  const penaltyAccrued = q2Period.totalPenalty;
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -106,39 +129,51 @@ export default function ForecastPage() {
 
       {/* ── Summary Cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6">
-        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${compliancePct >= 1 ? 'stat-gradient-green' : compliancePct >= 0.85 ? 'stat-gradient-amber' : 'stat-gradient-red'}`}>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Quarter Compliance</p>
-          <p className={`text-xl md:text-2xl font-bold mt-1 ${compliancePct >= 1 ? 'text-green-600' : compliancePct >= 0.85 ? 'text-amber-600' : 'text-red-600'}`}>
-            {formatPct(compliancePct)}
+
+        {/* Card 1: Quarter Compliance (projected) */}
+        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${projectedPct >= 100 ? 'stat-gradient-green' : projectedPct >= 85 ? 'stat-gradient-amber' : 'stat-gradient-red'}`}>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Quarter Compliance</p>
+            <StatusBadge pct100={projectedPct} />
+          </div>
+          <p className={`text-xl md:text-2xl font-bold mt-1 ${projectedPct >= 100 ? 'text-green-600' : projectedPct >= 85 ? 'text-amber-600' : 'text-red-600'}`}>
+            {fmtPct(projectedPct)}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{Q2_ELAPSED} day{Q2_ELAPSED !== 1 ? 's' : ''} so far</p>
+          <p className="text-xs text-gray-400 mt-0.5">projected for full quarter</p>
         </div>
+
+        {/* Card 2: Days Remaining */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Days Remaining</p>
           <p className="text-xl md:text-2xl font-bold mt-1 text-gray-900">{Q2_REMAINING}</p>
           <p className="text-xs text-gray-400 mt-0.5">of {Q2_TOTAL_DAYS} days</p>
         </div>
-        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${q2Period.totalPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Penalty Accrued (Q2)</p>
-          <p className={`text-xl md:text-2xl font-bold mt-1 ${q2Period.totalPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {formatAUD(q2Period.totalPenalty)}
+
+        {/* Card 3: Penalty Accrued (historical RED days only) */}
+        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${penaltyAccrued > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Penalty Accrued Q2 2026</p>
+          <p className={`text-xl md:text-2xl font-bold mt-1 ${penaltyAccrued > 0 ? 'text-red-600' : 'text-green-600'}`}>
+            {fmtAUD(penaltyAccrued)}
           </p>
           <div className="mt-1 space-y-0.5">
+            <p className="text-xs text-gray-400">Apr 1 – today</p>
             <p className="text-xs text-red-600 font-medium">Penalty days (RED only): {redDays}</p>
             <p className="text-xs text-amber-600 font-medium">AMBER days (at risk): {amberDays}</p>
           </div>
         </div>
-        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${hasEnoughData && projection.projectedTotalPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
-          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projected Penalty</p>
-          <p className={`text-xl md:text-2xl font-bold mt-1 ${hasEnoughData && projection.projectedTotalPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
-            {hasEnoughData ? formatAUD(projection.projectedTotalPenalty) : '—'}
+
+        {/* Card 4: Projected Penalty */}
+        <div className={`rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover ${projectedPenalty > 0 ? 'stat-gradient-red' : 'stat-gradient-green'}`}>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Projected Penalty (Q2 2026)</p>
+          <p className={`text-xl md:text-2xl font-bold mt-1 ${projectedPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
+            {fmtAUD(projectedPenalty)}
           </p>
-          <p className="text-xs text-gray-400 mt-0.5">{hasEnoughData ? 'at current pace' : 'Need 7+ days data'}</p>
+          <p className="text-xs text-gray-400 mt-0.5">at current pace</p>
         </div>
       </div>
 
-      {/* ── Q1 Penalty Note ── */}
-      {q2Period.totalPenalty === 0 && (
+      {/* ── Q2 Penalty Note ── */}
+      {penaltyAccrued === 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 flex items-start gap-3">
           <CheckCircle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
           <div className="text-sm text-blue-800">
@@ -149,28 +184,13 @@ export default function ForecastPage() {
         </div>
       )}
 
-      {/* ── Insufficient Data Notice ── */}
-      {!hasEnoughData && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Not enough data for accurate forecast.</p>
-            <p className="text-sm text-amber-700 mt-1">
-              Minimum {MIN_FORECAST_DAYS} days needed. Currently showing{' '}
-              <strong>{Q2_ELAPSED} day{Q2_ELAPSED !== 1 ? 's' : ''}</strong> of Q2 data.
-              Projections will appear once 7 days of Q2 data are available.
-            </p>
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 md:gap-6">
 
         {/* ── Left: Gauge + Penalty Table ── */}
         <div className="xl:col-span-2 space-y-4 md:space-y-6">
 
-          {/* Compliance Gauge — shown only when enough data */}
-          {hasEnoughData && <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
+          {/* Compliance Gauge */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
             <h2 className="font-semibold text-gray-900 mb-1">Q2 Compliance Gauge</h2>
             <p className="text-xs text-gray-400 mb-4">Based on {Q2_ELAPSED} days of data — updates daily</p>
             <div className="flex flex-col sm:flex-row items-center gap-6">
@@ -198,48 +218,44 @@ export default function ForecastPage() {
                   </RadialBarChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-2xl md:text-3xl font-bold" style={{ color: gaugeColour(compliancePct) }}>
+                  <span className="text-2xl md:text-3xl font-bold" style={{ color: gaugeColour(projectedPct) }}>
                     {gaugeValue.toFixed(0)}%
                   </span>
-                  <span className="text-xs text-gray-400 mt-0.5">compliant</span>
+                  <span className="text-xs text-gray-400 mt-0.5">projected</span>
                 </div>
               </div>
               <div className="flex-1 space-y-3 w-full">
                 <div className="flex items-center gap-3">
                   <span className="w-3 h-3 rounded-full bg-[#22c55e] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500">Compliant days</p>
-                    <p className="font-semibold text-gray-900 text-sm">{q2Period.compliantDays} / {Q2_ELAPSED} days ({formatPct(compliancePct)})</p>
+                    <p className="text-xs text-gray-500">Daily average (actual)</p>
+                    <p className="font-semibold text-gray-900 text-sm">{Math.round(dailyAvgActual).toLocaleString()} min/day</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="w-3 h-3 rounded-full bg-[#ef4444] shrink-0" />
+                  <span className="w-3 h-3 rounded-full bg-[#6366f1] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500">Non-compliant days</p>
-                    <p className="font-semibold text-gray-900 text-sm">{q2Period.nonCompliantDays} days so far</p>
+                    <p className="text-xs text-gray-500">Projected total (91 days)</p>
+                    <p className="font-semibold text-gray-900 text-sm">{Math.round(projectedTotal).toLocaleString()} min</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="w-3 h-3 rounded-full bg-[#f59e0b] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500">Projected non-compliant (all)</p>
-                    <p className="font-semibold text-gray-900 text-sm">
-                      ~{projectedNonCompliantDays} days for full quarter
-                    </p>
+                    <p className="text-xs text-gray-500">Target (91 days)</p>
+                    <p className="font-semibold text-gray-900 text-sm">{projectedTarget.toLocaleString()} min</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="w-3 h-3 rounded-full bg-[#ef4444] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500">Projected penalty days (RED only)</p>
-                    <p className="font-semibold text-gray-900 text-sm">
-                      ~{Math.round(projection.nonComplianceRate * Q2_TOTAL_DAYS)} days · {formatAUD(projection.projectedTotalPenalty)}
-                    </p>
+                    <p className="text-xs text-gray-500">Shortfall (projected)</p>
+                    <p className="font-semibold text-gray-900 text-sm">{Math.round(shortfallMins).toLocaleString()} min</p>
                   </div>
                 </div>
               </div>
             </div>
-          </div>}
+          </div>
 
           {/* Penalty Breakdown Table */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden card-hover">
@@ -273,13 +289,13 @@ export default function ForecastPage() {
                           }`}>{row.status}</span>
                         </td>
                         <td className="px-3 md:px-4 py-3 text-gray-700">{row.residents}</td>
-                        <td className="px-3 md:px-4 py-3 text-gray-700">{formatAUD(row.penaltyDay)}</td>
-                        <td className="px-3 md:px-4 py-3 font-semibold text-red-600">{formatAUD(row.total)}</td>
+                        <td className="px-3 md:px-4 py-3 text-gray-700">{fmtAUD(row.penaltyDay)}</td>
+                        <td className="px-3 md:px-4 py-3 font-semibold text-red-600">{fmtAUD(row.total)}</td>
                       </tr>
                     ))}
                     <tr className="bg-red-50 border-t border-red-100">
                       <td colSpan={4} className="px-3 md:px-4 py-3 font-semibold text-gray-700">Total Penalties (Q2 so far)</td>
-                      <td className="px-3 md:px-4 py-3 font-bold text-red-700">{formatAUD(q2Period.totalPenalty)}</td>
+                      <td className="px-3 md:px-4 py-3 font-bold text-red-700">{fmtAUD(penaltyAccrued)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -288,39 +304,39 @@ export default function ForecastPage() {
           </div>
         </div>
 
-        {/* ── Right: Recovery Plan + What If — shown only when enough data ── */}
-        {hasEnoughData && <div className="space-y-4 md:space-y-6">
+        {/* ── Right: Recovery Plan + What If ── */}
+        <div className="space-y-4 md:space-y-6">
 
           {/* Recovery Plan */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 card-hover">
             <div className="flex items-center gap-2 mb-4">
-              {recovery.isOnTrack
+              {shortfallMins === 0
                 ? <CheckCircle className="w-4 h-4 text-green-600" />
                 : <AlertTriangle className="w-4 h-4 text-amber-600" />
               }
               <h2 className="font-semibold text-gray-900">Recovery Plan</h2>
             </div>
-            {recovery.isOnTrack ? (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                <p className="text-sm text-green-700 font-medium">You are on track for Q2 2026! 🎉</p>
-                <p className="text-xs text-green-600 mt-1">Continue current staffing levels to maintain compliance.</p>
+            {shortfallMins === 0 ? (
+              <div className="bg-green-600 rounded-lg p-4">
+                <p className="text-sm text-white font-semibold">✓ On track — no penalty projected</p>
+                <p className="text-xs text-green-100 mt-1">Continue current staffing to maintain compliance.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                   <p className="text-sm text-amber-800 font-semibold">
-                    {Math.round(recovery.additionalMinutesPerDay).toLocaleString()} additional minutes/day needed
+                    {Math.round(extraMinutesPerDay).toLocaleString()} extra minutes/day needed
                   </p>
                   <p className="text-xs text-amber-700 mt-1">
-                    for the remaining {Q2_REMAINING} days to meet Q2 target.
+                    Shortfall of {Math.round(shortfallMins).toLocaleString()} min spread over {Q2_REMAINING} remaining days — roughly {Math.round(extraMinutesPerDay / 480 * 10) / 10 >= 1 ? `~${Math.round(extraMinutesPerDay / 480)} extra shift` : 'less than 1 extra shift'} per day.
                   </p>
                 </div>
                 <div className="space-y-2 text-sm">
                   {[
-                    { label: 'Q2 total target',    value: `${recovery.targetTotalMinutes.toLocaleString()} min`, colour: 'text-gray-900' },
-                    { label: 'Minutes delivered',   value: `${totalMinutesSoFar.toLocaleString()} min`,          colour: 'text-gray-900' },
-                    { label: 'Shortfall',           value: `${recovery.shortfallMinutes.toLocaleString()} min`,  colour: 'text-red-600'  },
-                    { label: 'Extra shifts needed', value: `~${Math.ceil(recovery.additionalMinutesPerDay / 480)} shifts/day`, colour: 'text-amber-600' },
+                    { label: 'Projected shortfall', value: `${Math.round(shortfallMins).toLocaleString()} min`,         colour: 'text-red-600'   },
+                    { label: 'Minutes delivered',   value: `${totalMinutesSoFar.toLocaleString()} min`,                  colour: 'text-gray-900'  },
+                    { label: 'Remaining needed',    value: `${Math.round(remainingMinutesNeeded).toLocaleString()} min`, colour: 'text-red-600'   },
+                    { label: 'Extra shifts/day',    value: `~${Math.round(extraMinutesPerDay / 480) || 1} shift`,        colour: 'text-amber-600' },
                   ].map(({ label, value, colour }) => (
                     <div key={label} className="flex justify-between py-1 border-b border-gray-50 last:border-0 gap-2">
                       <span className="text-gray-500 shrink-0">{label}</span>
@@ -356,20 +372,29 @@ export default function ForecastPage() {
             </div>
 
             <div className="space-y-1 text-sm">
-              {[
-                { label: 'Additional minutes/week',      value: `${whatIf.additionalMinutesPerWeek.toLocaleString()} min`,           colour: 'text-gray-900' },
-                { label: 'Projected compliance',          value: formatPct(whatIf.projectedCompliancePct),                            colour: whatIf.projectedCompliancePct >= 1 ? 'text-green-600' : whatIf.projectedCompliancePct >= 0.85 ? 'text-amber-600' : 'text-red-600' },
-                { label: 'Projected non-compliant days',  value: String(whatIf.projectedNonCompliantDays),                            colour: 'text-gray-900' },
-                { label: 'Penalty saved',                 value: whatIf.penaltySaved > 0 ? `+ ${formatAUD(whatIf.penaltySaved)}` : '$0.00', colour: whatIf.penaltySaved > 0 ? 'text-green-600' : 'text-gray-400' },
-              ].map(({ label, value, colour }) => (
-                <div key={label} className="flex justify-between items-center py-2 border-b border-gray-50 last:border-0 gap-2">
-                  <span className="text-gray-500 shrink-0 text-xs">{label}</span>
-                  <span className={`font-bold text-sm ${colour}`}>{value}</span>
-                </div>
-              ))}
+              <div className="flex justify-between items-center py-2 border-b border-gray-50 gap-2">
+                <span className="text-gray-500 shrink-0 text-xs">Additional minutes/week</span>
+                <span className="font-bold text-sm text-gray-900">{extraMinutesPerWeek.toLocaleString()} min</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-50 gap-2">
+                <span className="text-gray-500 shrink-0 text-xs">New compliance</span>
+                <span className={`font-bold text-sm ${newProjectedPct >= 100 ? 'text-green-600' : newProjectedPct >= 85 ? 'text-amber-600' : 'text-red-600'}`}>
+                  {fmtPct(newProjectedPct)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-50 gap-2">
+                <span className="text-gray-500 shrink-0 text-xs">New projected penalty</span>
+                <span className={`font-bold text-sm ${newPenalty > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {fmtAUD(newPenalty)}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 gap-2">
+                <span className="text-gray-500 shrink-0 text-xs">Penalty saved</span>
+                <span className="font-bold text-sm text-green-600">{fmtAUD(penaltySaved)}</span>
+              </div>
             </div>
 
-            {whatIf.projectedCompliancePct >= 1 && (
+            {newProjectedPct >= 100 && (
               <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-3">
                 <p className="text-xs text-green-700 font-medium flex items-center gap-1.5">
                   <TrendingUp className="w-3.5 h-3.5 shrink-0" />
@@ -379,7 +404,7 @@ export default function ForecastPage() {
             )}
           </div>
 
-        </div>}
+        </div>
       </div>
     </div>
   );

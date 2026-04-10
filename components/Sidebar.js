@@ -12,11 +12,13 @@ import {
   Settings,
   Shield,
   Activity,
+  Stethoscope,
 } from 'lucide-react';
 
 const navItems = [
-  { href: '/dashboard',   label: 'Dashboard',  icon: LayoutDashboard },
-  { href: '/shifts',      label: 'Shifts',     icon: Clock           },
+  { href: '/dashboard',    label: 'Dashboard',   icon: LayoutDashboard },
+  { href: '/rn-coverage',  label: 'RN Coverage', icon: Stethoscope     },
+  { href: '/shifts',       label: 'Shifts',      icon: Clock           },
   { href: '/staff',       label: 'Staff',      icon: Users           },
   { href: '/forecast',    label: 'Forecast',   icon: TrendingUp      },
   { href: '/alerts',      label: 'Alerts',     icon: Bell            },

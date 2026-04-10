@@ -1,14 +1,58 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Pencil, Trash2, X, Check, UserCheck, Database, RefreshCw } from 'lucide-react';
-import { staff as dummyStaff } from '@/lib/dummyData';
+import { Plus, Pencil, Trash2, X, Check, UserCheck, Database, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { staff as dummyStaff, TODAY } from '@/lib/dummyData';
 import { getStaff, addStaff, updateStaff, deleteStaff, mapStaff } from '@/lib/db';
 import { SEED_FACILITY_ID } from '@/lib/seedData';
 
 const ROLES   = ['RN', 'EN', 'PCW'];
 const TYPES   = ['Permanent', 'Casual', 'Agency'];
 const FILTERS = ['All', 'RN', 'EN', 'PCW'];
+const TABS    = ['Staff List', 'Qualifications'];
+
+// ─── Qualification helpers ────────────────────────────────────────────────────
+
+const QUALS = [
+  { key: 'ahpraExpiry',          label: 'AHPRA',          roles: ['RN','EN'] },
+  { key: 'policeCheckExpiry',    label: 'Police Check',   roles: ['RN','EN','PCW'] },
+  { key: 'firstAidExpiry',       label: 'First Aid',      roles: ['RN','EN','PCW'] },
+  { key: 'wwcExpiry',            label: 'WWC',            roles: ['RN','EN','PCW'] },
+  { key: 'manualHandlingExpiry', label: 'Manual Handling',roles: ['RN','EN','PCW'] },
+];
+
+function daysUntilExpiry(isoDate) {
+  if (!isoDate) return null;
+  const diff = new Date(isoDate + 'T00:00:00') - new Date(TODAY + 'T00:00:00');
+  return Math.round(diff / 86400000);
+}
+
+function QualBadge({ isoDate, required }) {
+  if (!required) return <span className="text-xs text-gray-300">N/A</span>;
+  if (!isoDate)  return <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-500">Not set</span>;
+  const days = daysUntilExpiry(isoDate);
+  const fmt  = new Date(isoDate + 'T00:00:00').toLocaleDateString('en-AU', { day:'2-digit', month:'2-digit', year:'numeric' });
+  if (days === null) return null;
+  if (days < 0)   return <span className="px-2 py-0.5 rounded text-xs font-bold bg-gray-900 text-white" title={fmt}>Expired</span>;
+  if (days <= 7)  return <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-100 text-red-700" title={fmt}>⚠ {days}d</span>;
+  if (days <= 30) return <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-100 text-amber-700" title={fmt}>{days}d</span>;
+  if (days <= 90) return <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700" title={fmt}>~{Math.round(days/30)}mo</span>;
+  return <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700" title={fmt}>Valid</span>;
+}
+
+function overallQualStatus(member) {
+  let worst = 'valid';
+  for (const q of QUALS) {
+    if (!member[q.key]) continue;
+    const days = daysUntilExpiry(member[q.key]);
+    if (days === null) continue;
+    if (days < 0)       { worst = 'expired'; break; }
+    else if (days <= 7) { worst = 'critical'; }
+    else if (days <= 30 && worst !== 'critical') { worst = 'expiring'; }
+    else if (days <= 90 && worst !== 'critical' && worst !== 'expiring') { worst = 'soon'; }
+  }
+  return worst;
+}
 
 // Convert Australian mobile 04XX XXX XXX → +614XXXXXXXX
 function toIntlPhone(phone) {
@@ -46,6 +90,7 @@ export default function StaffPage() {
   const [staffList, setStaffList]   = useState(dummyStaff);
   const [usingDb, setUsingDb]       = useState(false);
   const [dbLoading, setDbLoading]   = useState(true);
+  const [activeTab, setActiveTab]   = useState('Staff List');
   const [filter, setFilter]         = useState('All');
   const [form, setForm]             = useState(EMPTY_FORM);
   const [editId, setEditId]         = useState(null);
@@ -173,23 +218,56 @@ export default function StaffPage() {
         )}
       </div>
 
-      {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
-        {[
-          { label: 'Total',  value: counts.total,  colour: 'text-gray-900',   bg: 'bg-white'             },
-          { label: 'RN',     value: counts.rn,     colour: 'text-blue-700',   bg: 'stat-gradient-blue'   },
-          { label: 'EN',     value: counts.en,     colour: 'text-purple-700', bg: 'stat-gradient-purple' },
-          { label: 'PCW',    value: counts.pcw,    colour: 'text-green-700',  bg: 'stat-gradient-green'  },
-          { label: 'Agency', value: counts.agency, colour: 'text-amber-700',  bg: 'stat-gradient-amber'  },
-        ].map(({ label, value, colour, bg }) => (
-          <div key={label} className={`${bg} rounded-xl border border-gray-100 shadow-sm p-3 md:p-4 card-hover`}>
-            <p className="text-xs font-medium text-gray-500">{label}</p>
-            <p className={`text-xl md:text-2xl font-bold mt-1 ${colour}`}>{value}</p>
-          </div>
+      {/* ── Tabs ── */}
+      <div className="flex gap-1 mb-6 border-b border-gray-200">
+        {TABS.map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              activeTab === tab
+                ? 'border-[#22c55e] text-green-700'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            {tab}
+            {tab === 'Qualifications' && (() => {
+              const exp = dummyStaff.filter(m => {
+                for (const q of QUALS) {
+                  if (!m[q.key]) continue;
+                  const d = daysUntilExpiry(m[q.key]);
+                  if (d !== null && d <= 30) return true;
+                }
+                return false;
+              }).length;
+              return exp > 0 ? (
+                <span className="ml-1.5 px-1.5 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full">{exp} expiring soon</span>
+              ) : null;
+            })()}
+          </button>
         ))}
       </div>
 
-      {/* ── Add Staff Form ── */}
+      {/* ── Summary Cards ── */}
+      {activeTab === 'Staff List' && (
+        <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
+          {[
+            { label: 'Total',  value: counts.total,  colour: 'text-gray-900',   bg: 'bg-white'             },
+            { label: 'RN',     value: counts.rn,     colour: 'text-blue-700',   bg: 'stat-gradient-blue'   },
+            { label: 'EN',     value: counts.en,     colour: 'text-purple-700', bg: 'stat-gradient-purple' },
+            { label: 'PCW',    value: counts.pcw,    colour: 'text-green-700',  bg: 'stat-gradient-green'  },
+            { label: 'Agency', value: counts.agency, colour: 'text-amber-700',  bg: 'stat-gradient-amber'  },
+          ].map(({ label, value, colour, bg }) => (
+            <div key={label} className={`${bg} rounded-xl border border-gray-100 shadow-sm p-3 md:p-4 card-hover`}>
+              <p className="text-xs font-medium text-gray-500">{label}</p>
+              <p className={`text-xl md:text-2xl font-bold mt-1 ${colour}`}>{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Add Staff Form + Filters + Table (Staff List tab only) ── */}
+      {activeTab === 'Staff List' && (<>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5 mb-6">
         <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <Plus className="w-4 h-4 text-green-600" /> Add New Staff Member
@@ -314,6 +392,116 @@ export default function StaffPage() {
           </table>
         </div>
       </div>
+      </>)}
+
+      {/* ══════════════════════════════════════════════════════════════════════════
+          QUALIFICATIONS TAB (Feature 2)
+      ══════════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'Qualifications' && (
+        <div>
+          {/* Legend */}
+          <div className="flex flex-wrap gap-3 mb-4 text-xs">
+            <span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-red-100 text-red-700 font-bold">⚠ Xd</span> Critical ≤7 days</span>
+            <span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-amber-100 text-amber-700 font-bold">Xd</span> Expiring ≤30 days</span>
+            <span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-700 font-medium">~Xmo</span> Due ≤90 days</span>
+            <span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-green-100 text-green-700 font-medium">Valid</span> &gt;90 days</span>
+            <span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-gray-900 text-white font-bold">Expired</span> Past expiry</span>
+            <span className="flex items-center gap-1.5"><span className="text-gray-300">N/A</span> Not required for role</span>
+          </div>
+
+          {/* Qualifications Table */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[700px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-200">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</th>
+                    {QUALS.map(q => (
+                      <th key={q.key} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{q.label}</th>
+                    ))}
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Overall</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffList.filter(s => s.status === 'Active').map((s, idx) => {
+                    const status = overallQualStatus(s);
+                    return (
+                      <tr key={s.id} className={`border-b border-gray-50 hover:bg-green-50/20 transition-colors ${idx % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
+                        <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">{s.name}</td>
+                        <td className="px-4 py-3"><span className={`px-2 py-0.5 rounded text-xs font-semibold ${roleBadge(s.role)}`}>{s.role}</span></td>
+                        {QUALS.map(q => (
+                          <td key={q.key} className="px-4 py-3">
+                            <QualBadge isoDate={s[q.key]} required={q.roles.includes(s.role)} />
+                          </td>
+                        ))}
+                        <td className="px-4 py-3">
+                          {status === 'critical' && <span className="flex items-center gap-1 text-xs font-bold text-red-700"><AlertTriangle className="w-3 h-3" /> Critical</span>}
+                          {status === 'expiring' && <span className="flex items-center gap-1 text-xs font-bold text-amber-600"><AlertTriangle className="w-3 h-3" /> Expiring</span>}
+                          {status === 'soon'     && <span className="flex items-center gap-1 text-xs font-medium text-yellow-600"><AlertTriangle className="w-3 h-3" /> Due soon</span>}
+                          {status === 'expired'  && <span className="flex items-center gap-1 text-xs font-bold text-gray-900"><AlertTriangle className="w-3 h-3" /> Expired</span>}
+                          {status === 'valid'    && <span className="flex items-center gap-1 text-xs font-medium text-green-600"><ShieldCheck className="w-3 h-3" /> Valid</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Expiry alerts list */}
+          {(() => {
+            const expiring = [];
+            for (const member of staffList) {
+              for (const q of QUALS) {
+                if (!member[q.key]) continue;
+                const days = daysUntilExpiry(member[q.key]);
+                if (days !== null && days <= 90) {
+                  expiring.push({ staffName: member.name, label: q.label, days, expiry: member[q.key] });
+                }
+              }
+            }
+            expiring.sort((a, b) => a.days - b.days);
+            if (expiring.length === 0) return null;
+            return (
+              <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-100 p-4 md:p-5">
+                <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                  Upcoming Expiries — Action Required
+                </h3>
+                <div className="space-y-2">
+                  {expiring.map((e, i) => (
+                    <div key={i} className={`flex items-center justify-between p-3 rounded-lg border gap-2 ${
+                      e.days <= 7  ? 'bg-red-50 border-red-200'    :
+                      e.days <= 30 ? 'bg-amber-50 border-amber-200' :
+                                     'bg-yellow-50 border-yellow-200'
+                    }`}>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-900">{e.staffName} — {e.label}</p>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          Expires {new Date(e.expiry + 'T00:00:00').toLocaleDateString('en-AU', { day:'2-digit', month:'2-digit', year:'numeric' })}
+                          {e.days <= 7 && ' — Renew immediately to maintain RN compliance coverage'}
+                          {e.days > 7 && e.days <= 30 && ' — Action needed within 30 days'}
+                          {e.days > 30 && ' — Renewal due within 90 days'}
+                        </p>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold shrink-0 ${
+                        e.days <= 0  ? 'bg-gray-900 text-white'       :
+                        e.days <= 7  ? 'bg-red-600 text-white'        :
+                        e.days <= 30 ? 'bg-amber-500 text-white'      :
+                                       'bg-yellow-400 text-yellow-900'
+                      }`}>
+                        {e.days <= 0 ? 'Expired' : `${e.days} days`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

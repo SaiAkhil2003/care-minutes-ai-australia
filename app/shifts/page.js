@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { Plus, Download, Upload, Pencil, Trash2, ClipboardList, X, Check, Database, RefreshCw, Filter } from 'lucide-react';
-import { shifts as dummyShifts, staff as dummyStaff, facility } from '@/lib/dummyData';
+import { Plus, Download, Upload, Pencil, Trash2, ClipboardList, X, Check, Database, RefreshCw, Filter, Save, ChevronDown } from 'lucide-react';
+import { shifts as dummyShifts, staff as dummyStaff, facility, shiftTemplates as dummyTemplates } from '@/lib/dummyData';
 import { calculateDayCompliance, formatAUD } from '@/lib/compliance';
 import { getShifts, addShift, updateShift, deleteShift, getStaff, logShiftHistory, mapShift, mapStaff } from '@/lib/db';
 import { SEED_FACILITY_ID } from '@/lib/seedData';
@@ -84,6 +84,94 @@ export default function ShiftsPage() {
   const [customFrom, setCustomFrom]       = useState('');
   const [customTo, setCustomTo]           = useState('');
   const [showCustom, setShowCustom]       = useState(false);
+
+  // ── Template state (Feature 3) ───────────────────────────────────────────────
+  const [templates, setTemplates]           = useState(() => {
+    if (typeof window === 'undefined') return dummyTemplates;
+    try { return JSON.parse(localStorage.getItem('cm_shiftTemplates') || 'null') || dummyTemplates; }
+    catch { return dummyTemplates; }
+  });
+  const [showSaveModal, setShowSaveModal]   = useState(false);
+  const [showApplyModal, setShowApplyModal] = useState(false);
+  const [templateName, setTemplateName]     = useState('');
+  const [templateDesc, setTemplateDesc]     = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [applyWeekStart, setApplyWeekStart] = useState('');
+  const [templateSaved, setTemplateSaved]   = useState(false);
+  const [templateApplied, setTemplateApplied] = useState(false);
+
+  function saveTemplates(updated) {
+    setTemplates(updated);
+    try { localStorage.setItem('cm_shiftTemplates', JSON.stringify(updated)); } catch {}
+  }
+
+  // Get this-week's Monday (ISO)
+  function getThisMonday() {
+    const d = new Date('2026-04-07T00:00:00');
+    const dow = d.getDay() || 7;
+    d.setDate(d.getDate() - (dow - 1));
+    return d.toISOString().split('T')[0];
+  }
+
+  function handleSaveTemplate() {
+    if (!templateName.trim()) return;
+    // Build template from current week's shifts
+    const weekFrom = FILTER_RANGES['This Week'].from;
+    const weekTo   = FILTER_RANGES['This Week'].to;
+    const weekShiftsRaw = shifts.filter(s => s.date >= weekFrom && s.date <= weekTo);
+    const templateShifts = weekShiftsRaw.map(s => {
+      const d = new Date(s.date + 'T00:00:00');
+      const dow = d.getDay() || 7; // 1=Mon, 7=Sun
+      return {
+        staffId: s.staffId, staffName: s.staffName, staffType: s.staffType,
+        employmentType: s.employmentType, dayOfWeek: dow,
+        startTime: s.startTime, endTime: s.endTime, durationMinutes: s.durationMinutes,
+      };
+    });
+    const newTemplate = {
+      id: `template-${Date.now()}`,
+      name: templateName.trim(),
+      description: templateDesc.trim(),
+      createdAt: '2026-04-07',
+      shifts: templateShifts,
+    };
+    saveTemplates([...templates, newTemplate]);
+    setTemplateName('');
+    setTemplateDesc('');
+    setTemplateSaved(true);
+    setTimeout(() => { setShowSaveModal(false); setTemplateSaved(false); }, 1500);
+  }
+
+  function handleApplyTemplate() {
+    const tmpl = templates.find(t => t.id === selectedTemplate);
+    if (!tmpl || !applyWeekStart) return;
+    const mondayDate = new Date(applyWeekStart + 'T00:00:00');
+    const newShifts = [];
+    for (const ts of tmpl.shifts) {
+      const dayOffset = ts.dayOfWeek - 1; // Mon=0, Sun=6
+      const shiftDate = new Date(mondayDate);
+      shiftDate.setDate(mondayDate.getDate() + dayOffset);
+      const isoDate = shiftDate.toISOString().split('T')[0];
+      // Skip if shift already exists for this staff on this date
+      const exists = shifts.some(
+        s => s.date === isoDate && s.staffId === ts.staffId &&
+             s.startTime === ts.startTime && s.endTime === ts.endTime
+      );
+      if (!exists) {
+        newShifts.push({
+          id: `local-tmpl-${Date.now()}-${Math.random()}`,
+          date: isoDate,
+          staffId: ts.staffId, staffName: ts.staffName,
+          staffType: ts.staffType, employmentType: ts.employmentType,
+          startTime: ts.startTime, endTime: ts.endTime,
+          durationMinutes: ts.durationMinutes,
+        });
+      }
+    }
+    if (newShifts.length > 0) setShifts(prev => [...prev, ...newShifts]);
+    setTemplateApplied(true);
+    setTimeout(() => { setShowApplyModal(false); setTemplateApplied(false); setSelectedTemplate(''); setApplyWeekStart(''); }, 1500);
+  }
 
   // ── Load from Supabase ──────────────────────────────────────────────────────
   const loadFromDb = useCallback(async () => {
@@ -313,6 +401,19 @@ export default function ShiftsPage() {
           <p className="text-sm text-gray-500 mt-0.5">Add, edit and review care shifts</p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {/* Template buttons (Feature 3) */}
+          <button
+            onClick={() => setShowSaveModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-green-300 rounded-lg text-green-700 hover:bg-green-50 transition-colors font-medium"
+          >
+            <Save className="w-4 h-4" /> <span className="hidden sm:inline">Save as Template</span>
+          </button>
+          <button
+            onClick={() => { setShowApplyModal(true); setApplyWeekStart(getThisMonday()); }}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm border border-blue-300 rounded-lg text-blue-700 hover:bg-blue-50 transition-colors font-medium"
+          >
+            <ClipboardList className="w-4 h-4" /> <span className="hidden sm:inline">Apply Template</span>
+          </button>
           <button onClick={downloadTemplate} className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors font-medium">
             <Download className="w-4 h-4" /> <span className="hidden sm:inline">CSV Template</span>
           </button>
@@ -584,6 +685,146 @@ export default function ShiftsPage() {
                   {usingDb && <p><span className="font-medium text-gray-700">Storage</span> — Saved to Supabase database</p>}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════
+          SAVE TEMPLATE MODAL (Feature 3)
+      ══════════════════════════════════════════════════════════════════════════ */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowSaveModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Save className="w-4 h-4 text-green-600" /> Save This Week as Template
+              </h2>
+              <button onClick={() => setShowSaveModal(false)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Template Name *</label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={e => setTemplateName(e.target.value)}
+                  placeholder="e.g. Standard Week, Holiday Cover"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Description (optional)</label>
+                <input
+                  type="text"
+                  value={templateDesc}
+                  onChange={e => setTemplateDesc(e.target.value)}
+                  placeholder="Brief description of this template"
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-xs font-medium text-gray-600 mb-1.5">Preview — This Week's Shifts</p>
+                {shifts.filter(s => s.date >= FILTER_RANGES['This Week'].from && s.date <= FILTER_RANGES['This Week'].to).length === 0 ? (
+                  <p className="text-xs text-gray-400">No shifts found for this week.</p>
+                ) : (
+                  <p className="text-xs text-gray-600">
+                    {shifts.filter(s => s.date >= FILTER_RANGES['This Week'].from && s.date <= FILTER_RANGES['This Week'].to).length} shifts ·{' '}
+                    {shifts.filter(s => s.date >= FILTER_RANGES['This Week'].from && s.date <= FILTER_RANGES['This Week'].to && s.staffType === 'RN').length} RN shifts
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 pt-0">
+              <button onClick={() => setShowSaveModal(false)} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveTemplate}
+                disabled={!templateName.trim() || templateSaved}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-[#22c55e] text-white rounded-lg text-sm font-semibold hover:bg-green-600 transition-colors disabled:opacity-60"
+              >
+                {templateSaved ? <><Check className="w-4 h-4" /> Saved!</> : <><Save className="w-4 h-4" /> Save Template</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════════════
+          APPLY TEMPLATE MODAL (Feature 3)
+      ══════════════════════════════════════════════════════════════════════════ */}
+      {showApplyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowApplyModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-blue-600" /> Apply Template to Week
+              </h2>
+              <button onClick={() => setShowApplyModal(false)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Select Template</label>
+                <select
+                  value={selectedTemplate}
+                  onChange={e => setSelectedTemplate(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                >
+                  <option value="">— Choose a template —</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.shifts?.length || 0} shifts)</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Apply to week starting (Monday)</label>
+                <input
+                  type="date"
+                  value={applyWeekStart}
+                  onChange={e => setApplyWeekStart(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              {selectedTemplate && applyWeekStart && (
+                <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <p className="text-xs font-medium text-blue-700 mb-1">Preview</p>
+                  <p className="text-xs text-blue-600">
+                    {(() => {
+                      const tmpl = templates.find(t => t.id === selectedTemplate);
+                      if (!tmpl) return null;
+                      const newShifts = tmpl.shifts.filter(ts => {
+                        const mondayDate = new Date(applyWeekStart + 'T00:00:00');
+                        const shiftDate = new Date(mondayDate);
+                        shiftDate.setDate(mondayDate.getDate() + ts.dayOfWeek - 1);
+                        const isoDate = shiftDate.toISOString().split('T')[0];
+                        return !shifts.some(
+                          s => s.date === isoDate && s.staffId === ts.staffId &&
+                               s.startTime === ts.startTime && s.endTime === ts.endTime
+                        );
+                      }).length;
+                      return `${newShifts} new shifts will be added · ${tmpl.shifts.length - newShifts} already exist (skipped)`;
+                    })()}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 p-5 pt-0">
+              <button onClick={() => setShowApplyModal(false)} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyTemplate}
+                disabled={!selectedTemplate || !applyWeekStart || templateApplied}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors disabled:opacity-60"
+              >
+                {templateApplied ? <><Check className="w-4 h-4" /> Applied!</> : <><ClipboardList className="w-4 h-4" /> Apply Template</>}
+              </button>
             </div>
           </div>
         </div>

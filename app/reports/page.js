@@ -5,12 +5,8 @@ import { FileText, Download, RefreshCw, CheckCircle, XCircle } from 'lucide-reac
 import { pdf } from '@react-pdf/renderer';
 import { facility, manager, shiftsByDate, trendDates } from '@/lib/dummyData';
 import { calculateDayCompliance, calculatePeriodCompliance, formatAUD, formatPct } from '@/lib/compliance';
+import { getAustralianToday, getQuarterInfo } from '@/lib/dateUtils';
 import AuditPDF from './AuditPDF';
-
-function toIso(ddmmyyyy) {
-  const [d, m, y] = ddmmyyyy.split('/');
-  return `${y}-${m}-${d}`;
-}
 
 function toDisplay(iso) {
   if (!iso) return '';
@@ -19,19 +15,28 @@ function toDisplay(iso) {
 }
 
 export default function ReportsPage() {
-  const [fromDate,  setFromDate]  = useState('01/01/2026');
-  const [toDate,    setToDate]    = useState('02/04/2026');
+  const [fromDate,  setFromDate]  = useState(() => {
+    const today = getAustralianToday();
+    return getQuarterInfo(today).start;
+  });
+  const [toDate,    setToDate]    = useState(() => getAustralianToday());
   const [generated, setGenerated] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [rangeError, setRangeError] = useState('');
 
-  // Filter trendDates to the selected range
+  // Generate all calendar dates in the selected range (not just trendDates)
   const filteredDates = useMemo(() => {
     if (!generated) return [];
     try {
-      const from = toIso(fromDate);
-      const to   = toIso(toDate);
-      return trendDates.filter(d => d >= from && d <= to);
+      const dates = [];
+      const cur = new Date(fromDate + 'T00:00:00');
+      const end = new Date(toDate   + 'T00:00:00');
+      while (cur <= end) {
+        dates.push(cur.toISOString().split('T')[0]);
+        cur.setDate(cur.getDate() + 1);
+      }
+      return dates;
     } catch { return trendDates; }
   }, [generated, fromDate, toDate]);
 
@@ -66,6 +71,11 @@ export default function ReportsPage() {
 
   function handleGenerate(e) {
     e.preventDefault();
+    if (fromDate > toDate) {
+      setRangeError('From date cannot be after To date.');
+      return;
+    }
+    setRangeError('');
     setGenerating(true);
     setTimeout(() => {
       setGenerated(true);
@@ -81,8 +91,8 @@ export default function ReportsPage() {
         <AuditPDF
           facility={facility}
           manager={manager}
-          fromDate={fromDate}
-          toDate={toDate}
+          fromDate={toDisplay(fromDate)}
+          toDate={toDisplay(toDate)}
           periodData={periodData}
           staffBreakdown={staffBreakdown}
           filteredDates={filteredDates}
@@ -92,7 +102,7 @@ export default function ReportsPage() {
       const url = URL.createObjectURL(blob);
       const a   = document.createElement('a');
       a.href = url;
-      a.download = `CareMinutes_AuditReport_${fromDate.replace(/\//g,'-')}_${toDate.replace(/\//g,'-')}.pdf`;
+      a.download = `CareMinutes_AuditReport_${fromDate}_${toDate}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -115,27 +125,30 @@ export default function ReportsPage() {
         <h2 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <FileText className="w-4 h-4 text-blue-600" /> ACQSC Audit Report
         </h2>
-        <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-3 sm:items-end">
+        <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-3 sm:items-end flex-wrap">
           <div className="flex-1 sm:flex-none">
-            <label className="block text-xs font-medium text-gray-600 mb-1">From (DD/MM/YYYY)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">From</label>
             <input
-              type="text"
+              type="date"
               value={fromDate}
-              onChange={e => { setFromDate(e.target.value); setGenerated(false); }}
-              placeholder="01/01/2026"
-              className="w-full sm:w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              max={toDate}
+              onChange={e => { setFromDate(e.target.value); setGenerated(false); setRangeError(''); }}
+              className="w-full sm:w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div className="flex-1 sm:flex-none">
-            <label className="block text-xs font-medium text-gray-600 mb-1">To (DD/MM/YYYY)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">To</label>
             <input
-              type="text"
+              type="date"
               value={toDate}
-              onChange={e => { setToDate(e.target.value); setGenerated(false); }}
-              placeholder="02/04/2026"
-              className="w-full sm:w-36 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              min={fromDate}
+              onChange={e => { setToDate(e.target.value); setGenerated(false); setRangeError(''); }}
+              className="w-full sm:w-40 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+          {rangeError && (
+            <p className="w-full text-xs text-red-600 font-medium -mt-1">{rangeError}</p>
+          )}
           <button
             type="submit"
             disabled={generating}
@@ -178,10 +191,10 @@ export default function ReportsPage() {
                   </div>
                 </div>
                 <p className="text-sm text-gray-600 mt-2">
-                  <span className="font-medium">Reporting period:</span> {fromDate} — {toDate}
+                  <span className="font-medium">Reporting period:</span> {toDisplay(fromDate)} — {toDisplay(toDate)}
                 </p>
                 <p className="text-sm text-gray-600">
-                  <span className="font-medium">Generated:</span> {toDisplay('2026-04-02')} 09:14 AEST
+                  <span className="font-medium">Generated:</span> {toDisplay('2026-04-10')} 09:14 AEST
                 </p>
                 <p className="text-sm text-gray-600">
                   <span className="font-medium">Prepared by:</span> {manager.name}
