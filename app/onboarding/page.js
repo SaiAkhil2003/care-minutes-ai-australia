@@ -144,7 +144,7 @@ export default function OnboardingPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
                 <Field label="Facility Name *">
-                  <Input value={facName} onChange={e => setFacName(e.target.value)} placeholder="Sunrise Aged Care" />
+                  <Input value={facName} onChange={e => setFacName(e.target.value)} placeholder="Southern Cross Care Group" />
                 </Field>
               </div>
               <div className="col-span-2">

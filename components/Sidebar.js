@@ -39,7 +39,7 @@ export default function Sidebar() {
           </div>
           <span className="font-bold text-base tracking-tight text-white">CareMinutes.ai</span>
         </div>
-        <p className="text-xs text-slate-400 truncate ml-0.5 mt-1">Sunrise Aged Care</p>
+        <p className="text-xs text-slate-400 truncate ml-0.5 mt-1">Southern Cross Care Group</p>
       </div>
 
       {/* Navigation */}

@@ -298,7 +298,7 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <Field label="Facility Name">
-                <SettingsInput value={facName} onChange={e => setFacName(e.target.value)} placeholder="Sunrise Aged Care" />
+                <SettingsInput value={facName} onChange={e => setFacName(e.target.value)} placeholder="Southern Cross Care Group" />
               </Field>
             </div>
             <Field label="ABN">
